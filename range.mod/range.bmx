@@ -18,9 +18,9 @@
 ' 
 SuperStrict
 
-Rem
-bbdoc: System/Range
-End Rem
+'Rem
+'bbdoc: System/Range
+'End Rem
 Module BRL.Range
 
 ?bmxng2

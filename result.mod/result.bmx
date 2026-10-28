@@ -18,9 +18,9 @@
 ' 
 SuperStrict
 
-Rem
-bbdoc: System/Result
-End Rem
+'Rem
+'bbdoc: System/Result
+'End Rem
 Module BRL.Result
 
 ?bmxng2

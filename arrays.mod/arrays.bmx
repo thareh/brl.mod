@@ -18,9 +18,9 @@
 ' 
 SuperStrict
 
-Rem
-bbdoc: System/Arrays
-End Rem
+'Rem
+'bbdoc: System/Arrays
+'End Rem
 Module BRL.Arrays
 
 ?bmxng2
@@ -43,11 +43,11 @@ about: The returned array is newly allocated. @mapper is invoked exactly once
 for each source element, in index order, and exceptions propagate unchanged.
 End Rem
 Function Map<T, U>:U[](values:T[], mapper:Closure<U(value:T)>)
-	Local result:U[] = New U[values.Length]
+	Local Result:U[] = New U[values.Length]
 	For Local index:Int = 0 Until values.Length
-		result[index] = mapper(values[index])
+		Result[index] = mapper(values[index])
 	Next
-	Return result
+	Return Result
 End Function
 
 Rem
@@ -57,11 +57,11 @@ param: The function invoked once for each element.
 returns: A newly allocated array of mapped values.
 End Rem
 Function Map<T, U>:U[](values:T[], mapper:U(value:T))
-	Local result:U[] = New U[values.Length]
+	Local Result:U[] = New U[values.Length]
 	For Local index:Int = 0 Until values.Length
-		result[index] = mapper(values[index])
+		Result[index] = mapper(values[index])
 	Next
-	Return result
+	Return Result
 End Function
 
 Rem
@@ -73,16 +73,16 @@ about: The returned array is newly allocated, including when every element is
 retained. @predicate is invoked exactly once per source element in index order.
 End Rem
 Function Filter<T>:T[](values:T[], predicate:Closure<Int(value:T)>)
-	Local result:T[] = New T[values.Length]
-	Local count:Int
+	Local Result:T[] = New T[values.Length]
+	Local Count:Int
 	For Local value:T = EachIn values
 		If predicate(value) Then
-			result[count] = value
-			count :+ 1
+			Result[Count] = value
+			Count :+ 1
 		End If
 	Next
-	If count = result.Length Then Return result
-	Return result[..count]
+	If Count = Result.Length Then Return Result
+	Return Result[..count]
 End Function
 
 Rem
@@ -92,16 +92,16 @@ param: The function tested once for each element.
 returns: A newly allocated array containing accepted elements in source order.
 End Rem
 Function Filter<T>:T[](values:T[], predicate:Int(value:T))
-	Local result:T[] = New T[values.Length]
-	Local count:Int
+	Local Result:T[] = New T[values.Length]
+	Local Count:Int
 	For Local value:T = EachIn values
 		If predicate(value) Then
-			result[count] = value
-			count :+ 1
+			Result[Count] = value
+			Count :+ 1
 		End If
 	Next
-	If count = result.Length Then Return result
-	Return result[..count]
+	If Count = Result.Length Then Return Result
+	Return Result[..count]
 End Function
 
 Rem
@@ -141,11 +141,11 @@ param: The Closure tested once for each element.
 returns: The number of accepted elements.
 End Rem
 Function Count<T>:Int(values:T[], predicate:Closure<Int(value:T)>)
-	Local count:Int
+	Local Count:Int
 	For Local value:T = EachIn values
-		If predicate(value) Then count :+ 1
+		If predicate(value) Then Count :+ 1
 	Next
-	Return count
+	Return Count
 End Function
 
 Rem
@@ -155,11 +155,11 @@ param: The function tested once for each element.
 returns: The number of accepted elements.
 End Rem
 Function Count<T>:Int(values:T[], predicate:Int(value:T))
-	Local count:Int
+	Local Count:Int
 	For Local value:T = EachIn values
-		If predicate(value) Then count :+ 1
+		If predicate(value) Then Count :+ 1
 	Next
-	Return count
+	Return Count
 End Function
 
 Rem
