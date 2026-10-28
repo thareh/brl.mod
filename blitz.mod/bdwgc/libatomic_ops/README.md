@@ -3,22 +3,7 @@
 IN NEW CODE, PLEASE USE C11 OR C++14 STANDARD ATOMICS INSTEAD OF THE CORE
 LIBRARY IN THIS PACKAGE.
 
-[![Travis-CI build status](https://app.travis-ci.com/ivmai/libatomic_ops.svg?branch=master)](https://app.travis-ci.com/github/ivmai/libatomic_ops)
-[![AppVeyor CI build status](https://ci.appveyor.com/api/projects/status/github/ivmai/libatomic_ops?branch=master&svg=true)](https://ci.appveyor.com/project/ivmai/libatomic-ops)
-[![Codecov.io](https://codecov.io/github/ivmai/libatomic_ops/coverage.svg?branch=master)](https://codecov.io/github/ivmai/libatomic_ops?branch=master)
-[![Coveralls test coverage status](https://coveralls.io/repos/ivmai/libatomic_ops/badge.png?branch=master)](https://coveralls.io/github/ivmai/libatomic_ops)
-[![Coverity Scan build status](https://scan.coverity.com/projects/10809/badge.svg)](https://scan.coverity.com/projects/ivmai-libatomic_ops)
-[![LGTM Code Quality: Cpp](https://img.shields.io/lgtm/grade/cpp/g/ivmai/libatomic_ops.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/ivmai/libatomic_ops/context:cpp)
-[![LGTM Total Alerts](https://img.shields.io/lgtm/alerts/g/ivmai/libatomic_ops.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/ivmai/libatomic_ops/alerts)
-[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fivmai%2Flibatomic_ops.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fivmai%2Flibatomic_ops?ref=badge_shield)
-[![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/6333/badge)](https://bestpractices.coreinfrastructure.org/projects/6333)
-[![Hits-of-Code](https://hitsofcode.com/github/ivmai/libatomic_ops?branch=master)](https://hitsofcode.com/github/ivmai/libatomic_ops/view)
-[![Lines of code](https://img.shields.io/tokei/lines/github/ivmai/libatomic_ops)](https://shields.io/category/size)
-[![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/ivmai/libatomic_ops)](https://shields.io/category/size)
-[![Github All Releases](https://img.shields.io/github/downloads/ivmai/libatomic_ops/total.svg)](https://shields.io/category/downloads)
-[![Packaging status](https://repology.org/badge/tiny-repos/libatomic-ops.svg)](https://repology.org/project/libatomic-ops/versions)
-
-This is version 7.7.0 (next release development) of libatomic_ops.
+This is version 7.10.0 of libatomic_ops.
 
 License: [MIT](LICENSE) for core library / [GPL-2.0](COPYING) for gpl
 extension.
@@ -27,11 +12,11 @@ extension.
 ## Download
 
 You might find a more recent/stable version on the
-[Download](https://github.com/ivmai/libatomic_ops/wiki/Download) page, or
+[Download](https://github.com/bdwgc/libatomic_ops/wiki/Download) page, or
 [BDWGC site](http://www.hboehm.info/gc/).
 
 Also, the latest bug fixes and new features are available in the
-[development repository](https://github.com/ivmai/libatomic_ops).
+[development repository](https://github.com/bdwgc/libatomic_ops).
 
 
 ## Overview
@@ -105,11 +90,11 @@ inline assembly code.  Use cc.
 ## Feedback, Contribution, Questions and Notifications
 
 Please address bug reports and new feature ideas to
-[GitHub issues](https://github.com/ivmai/libatomic_ops/issues).  Before the
+[GitHub issues](https://github.com/bdwgc/libatomic_ops/issues).  Before the
 submission please check that it has not been done yet by someone else.
 
 If you want to contribute, submit
-a [pull request](https://github.com/ivmai/libatomic_ops/pulls) to GitHub.
+a [pull request](https://github.com/bdwgc/libatomic_ops/pulls) to GitHub.
 
 If you need help, use
 [Stack Overflow](https://stackoverflow.com/questions/tagged/atomic-ops).
@@ -117,16 +102,16 @@ Older questions on the site can be found by
 [this query](https://stackoverflow.com/search?q=atomic_ops).
 Older technical discussions are also available in `bdwgc` mailing list
 archive - it can be downloaded as a
-[compressed file](https://github.com/ivmai/bdwgc/files/1038163/bdwgc-mailing-list-archive-2017_04.tar.gz)
+[compressed file](https://github.com/bdwgc/bdwgc/files/1038163/bdwgc-mailing-list-archive-2017_04.tar.gz)
 or browsed at [Narkive](http://bdwgc.opendylan.narkive.com) (please search
 for _atomic_ keyword).
 
 To get new release announcements, subscribe to
-[RSS feed](https://github.com/ivmai/libatomic_ops/releases.atom).
+[RSS feed](https://github.com/bdwgc/libatomic_ops/releases.atom).
 (To receive the notifications by email, a 3rd-party free service like
 [IFTTT RSS Feed](https://ifttt.com/feed) can be setup.)
 To be notified on all issues, please
-[watch](https://github.com/ivmai/libatomic_ops/watchers) the project on
+[watch](https://github.com/bdwgc/libatomic_ops/watchers) the project on
 GitHub.
 
 

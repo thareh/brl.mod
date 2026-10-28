@@ -12,8 +12,11 @@
  * Permission to modify the code and to distribute modified code is granted,
  * provided the above notices are retained, and a notice that the code was
  * modified is included with the above copyright notice.
- *
  */
+
+#if !defined(AO_ATOMIC_OPS_H) || defined(AO_ATOMIC_OPS_INCLUDED)
+# error This file should not be included directly.
+#endif
 
 /* The following implementation assumes GCC 4.7 or later.               */
 /* For the details, see GNU Manual, chapter 6.52 (Built-in functions    */
@@ -58,6 +61,10 @@
   }
 # define AO_HAVE_nop_full
 
+#elif defined(AO_THREAD_SANITIZER) && !defined(AO_USE_ATOMIC_THREAD_FENCE)
+  /* Workaround a compiler warning (reported by gcc-11, at least)   */
+  /* that atomic_thread_fence is unsupported with thread sanitizer. */
+
 #else
   AO_INLINE void
   AO_nop_read(void)
@@ -82,7 +89,7 @@
     __atomic_thread_fence(__ATOMIC_SEQ_CST);
   }
 # define AO_HAVE_nop_full
-#endif /* !AO_UNIPROCESSOR */
+#endif /* !AO_UNIPROCESSOR && !AO_THREAD_SANITIZER */
 
 #include "generic-small.h"
 

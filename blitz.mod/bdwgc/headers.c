@@ -2,13 +2,13 @@
  * Copyright 1988, 1989 Hans-J. Boehm, Alan J. Demers
  * Copyright (c) 1991-1994 by Xerox Corporation.  All rights reserved.
  * Copyright (c) 1996 by Silicon Graphics.  All rights reserved.
- * Copyright (c) 2008-2022 Ivan Maidanski
+ * Copyright (c) 2008-2024 Ivan Maidanski
  *
  * THIS MATERIAL IS PROVIDED AS IS, WITH ABSOLUTELY NO WARRANTY EXPRESSED
  * OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
  *
  * Permission is hereby granted to use or copy this program
- * for any purpose, provided the above notices are retained on all copies.
+ * for any purpose,  provided the above notices are retained on all copies.
  * Permission to modify the code and to distribute modified code is granted,
  * provided the above notices are retained, and a notice that the code was
  * modified is included with the above copyright notice.
@@ -31,9 +31,9 @@ GC_INNER hdr * GC_find_header(ptr_t h)
 #   ifdef HASH_TL
         hdr * result;
         GET_HDR(h, result);
-        return result;
+        return(result);
 #   else
-        return HDR_INNER(h);
+        return(HDR_INNER(h));
 #   endif
 }
 
@@ -108,7 +108,6 @@ GC_INNER ptr_t GC_scratch_alloc(size_t bytes)
     ptr_t result = GC_scratch_free_ptr;
     size_t bytes_to_get;
 
-    GC_ASSERT(I_HOLD_LOCK());
     bytes = ROUNDUP_GRANULE_SIZE(bytes);
     for (;;) {
         GC_ASSERT((word)GC_scratch_end_ptr >= (word)result);
@@ -168,14 +167,13 @@ static hdr * alloc_hdr(void)
 {
     hdr * result;
 
-    GC_ASSERT(I_HOLD_LOCK());
     if (NULL == GC_hdr_free_list) {
         result = (hdr *)GC_scratch_alloc(sizeof(hdr));
     } else {
         result = GC_hdr_free_list;
         GC_hdr_free_list = (hdr *) result -> hb_next;
     }
-    return result;
+    return(result);
 }
 
 GC_INLINE void free_hdr(hdr * hhdr)
@@ -194,7 +192,6 @@ GC_INNER void GC_init_headers(void)
 {
     unsigned i;
 
-    GC_ASSERT(I_HOLD_LOCK());
     GC_ASSERT(NULL == GC_all_nils);
     GC_all_nils = (bottom_index *)GC_scratch_alloc(sizeof(bottom_index));
     if (GC_all_nils == NULL) {
@@ -222,9 +219,10 @@ static GC_bool get_index(word addr)
 #   ifdef HASH_TL
       i = TL_HASH(hi);
 
-      pi = GC_top_index[i];
-      for (p = pi; p != GC_all_nils; p = p -> hash_link) {
-          if (p -> key == hi) return TRUE;
+      pi = p = GC_top_index[i];
+      while(p != GC_all_nils) {
+          if (p -> key == hi) return(TRUE);
+          p = p -> hash_link;
       }
 #   else
       if (GC_top_index[hi] != GC_all_nils)
@@ -257,7 +255,7 @@ static GC_bool get_index(word addr)
       *prev = r;
 
       GC_top_index[i] = r;
-    return TRUE;
+    return(TRUE);
 }
 
 /* Install a header for block h.        */
@@ -267,17 +265,15 @@ GC_INNER struct hblkhdr * GC_install_header(struct hblk *h)
 {
     hdr * result;
 
-    GC_ASSERT(I_HOLD_LOCK());
-    if (EXPECT(!get_index((word)h), FALSE)) return NULL;
-
+    if (!get_index((word) h)) return(0);
     result = alloc_hdr();
-    if (EXPECT(result != NULL, TRUE)) {
+    if (result) {
       SET_HDR(h, result);
 #     ifdef USE_MUNMAP
         result -> hb_last_reclaimed = (unsigned short)GC_gc_no;
 #     endif
     }
-    return result;
+    return(result);
 }
 
 /* Set up forwarding counts for block h of size sz */
@@ -329,8 +325,11 @@ GC_INNER void GC_remove_counts(struct hblk *h, size_t sz/* bytes */)
     }
 }
 
-GC_API void GC_CALL GC_apply_to_all_blocks(GC_walk_hblk_fn fn,
-                                           GC_word client_data)
+/* Apply fn to all allocated blocks.  It is the caller responsibility   */
+/* to avoid data race during the function execution (e.g. by holding    */
+/* the allocation lock).                                                */
+void GC_apply_to_all_blocks(void (*fn)(struct hblk *h, word client_data),
+                            word client_data)
 {
     signed_word j;
     bottom_index * index_p;
@@ -346,13 +345,13 @@ GC_API void GC_CALL GC_apply_to_all_blocks(GC_walk_hblk_fn fn,
                           client_data);
                 }
                 j--;
-             } else if (index_p->index[j] == 0) {
+            } else if (index_p->index[j] == 0) {
                 j--;
-             } else {
+            } else {
                 j -= (signed_word)(index_p->index[j]);
-             }
-         }
-     }
+            }
+        }
+    }
 }
 
 GC_INNER struct hblk * GC_next_block(struct hblk *h, GC_bool allow_free)
@@ -377,8 +376,9 @@ GC_INNER struct hblk * GC_next_block(struct hblk *h, GC_bool allow_free)
                 j++;
             } else {
                 if (allow_free || !HBLK_IS_FREE(hhdr)) {
-                    return (struct hblk *)(((bi -> key << LOG_BOTTOM_SZ)
-                                            + j) << LOG_HBLKSIZE);
+                    return ((struct hblk *)
+                              (((bi -> key << LOG_BOTTOM_SZ) + j)
+                               << LOG_HBLKSIZE));
                 } else {
                     j += divHBLKSZ(hhdr -> hb_sz);
                 }
@@ -387,7 +387,7 @@ GC_INNER struct hblk * GC_next_block(struct hblk *h, GC_bool allow_free)
         j = 0;
         bi = bi -> asc_link;
     }
-    return NULL;
+    return(0);
 }
 
 GC_INNER struct hblk * GC_prev_block(struct hblk *h)
@@ -399,26 +399,25 @@ GC_INNER struct hblk * GC_prev_block(struct hblk *h)
     GET_BI(h, bi);
     if (bi == GC_all_nils) {
         word hi = (word)h >> (LOG_BOTTOM_SZ + LOG_HBLKSIZE);
-
         bi = GC_all_bottom_indices_end;
-        while (bi != NULL && bi -> key > hi)
-            bi = bi -> desc_link;
+        while (bi != 0 && bi -> key > hi) bi = bi -> desc_link;
         j = BOTTOM_SZ - 1;
     }
-    for (; bi != NULL; bi = bi -> desc_link) {
+    while(bi != 0) {
         while (j >= 0) {
             hdr * hhdr = bi -> index[j];
-
-            if (NULL == hhdr) {
+            if (0 == hhdr) {
                 --j;
             } else if (IS_FORWARDING_ADDR_OR_NIL(hhdr)) {
                 j -= (signed_word)hhdr;
             } else {
-                return (struct hblk *)(((bi -> key << LOG_BOTTOM_SZ) + j)
-                                       << LOG_HBLKSIZE);
+                return((struct hblk *)
+                          (((bi -> key << LOG_BOTTOM_SZ) + j)
+                               << LOG_HBLKSIZE));
             }
         }
         j = BOTTOM_SZ - 1;
+        bi = bi -> desc_link;
     }
-    return NULL;
+    return(0);
 }

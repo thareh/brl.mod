@@ -5,7 +5,7 @@
  * OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
  *
  * Permission is hereby granted to use or copy this program
- * for any purpose, provided the above notices are retained on all copies.
+ * for any purpose,  provided the above notices are retained on all copies.
  * Permission to modify the code and to distribute modified code is granted,
  * provided the above notices are retained, and a notice that the code was
  * modified is included with the above copyright notice.
@@ -13,7 +13,7 @@
 
 /*
  * These are functions on cords that do not need to understand their
- * implementation.  They serve also serve as example client code for
+ * implementation.  They also serve as example client code for
  * cord_basics.
  */
 
@@ -29,8 +29,8 @@
 # include <stdlib.h>
 # include <stdarg.h>
 
-#include "gc/cord.h"
-#include "gc/ec.h"
+# include "cord.h"
+# include "ec.h"
 
 # define I_HIDE_POINTERS    /* So we get access to allocation lock. */
                 /* We use this for lazy file reading,   */
@@ -38,13 +38,17 @@
                 /* of the threads primitives.           */
 # include "gc.h"
 
-/* For now we assume that pointer reads and writes are atomic,  */
-/* i.e. another thread always sees the state before or after    */
-/* a write.  This might be false on a Motorola M68K with        */
-/* pointers that are not 32-bit aligned.  But there probably    */
-/* aren't too many threads packages running on those.           */
-# define ATOMIC_WRITE(x,y) (x) = (y)
-# define ATOMIC_READ(x) (*(x))
+/* If available, use GCC built-in atomic load-acquire and store-release */
+/* primitives to access the cache lines safely.  Otherwise, fall back   */
+/* to using the GC allocation lock even during the cache lines reading. */
+/* Note: for simplicity of libcord building, do not rely on GC_THREADS  */
+/* macro, libatomic_ops package presence and private/gc_atomic_ops.h.   */
+#if !defined(AO_DISABLE_GCC_ATOMICS) \
+    && ((defined(__clang__) && __clang_major__ >= 8) /* clang 8.0+ */ \
+        || (defined(__GNUC__) /* gcc 5.4+ */ \
+            && (__GNUC__ > 5 || (__GNUC__ == 5 && __GNUC_MINOR__ >= 4))))
+# define CORD_USE_GCC_ATOMIC
+#endif
 
 /* The standard says these are in stdio.h, but they aren't always: */
 # ifndef SEEK_SET
@@ -63,16 +67,22 @@ typedef void (* oom_fn)(void);
                          ABORT("Out of memory"); }
 # define ABORT(msg) { fprintf(stderr, "%s\n", msg); abort(); }
 
+#if GC_GNUC_PREREQ(3, 4) || defined(__clang__)
+# define CORD_ATTR_UNUSED __attribute__((__unused__))
+#else
+# define CORD_ATTR_UNUSED /* empty */
+#endif
+
 CORD CORD_cat_char(CORD x, char c)
 {
     char * string;
 
-    if ('\0' == c) return CORD_cat(x, CORD_nul(1));
+    if (c == '\0') return(CORD_cat(x, CORD_nul(1)));
     string = (char *)GC_MALLOC_ATOMIC(2);
-    if (NULL == string) OUT_OF_MEMORY;
+    if (string == 0) OUT_OF_MEMORY;
     string[0] = c;
     string[1] = '\0';
-    return CORD_cat_char_star(x, string, 1);
+    return(CORD_cat_char_star(x, string, 1));
 }
 
 CORD CORD_catn(int nargs, ...)
@@ -87,7 +97,7 @@ CORD CORD_catn(int nargs, ...)
         result = CORD_cat(result, next);
     }
     va_end(args);
-    return result;
+    return(result);
 }
 
 typedef struct {
@@ -103,7 +113,11 @@ int CORD_fill_proc(char c, void * client_data)
 
     (d -> buf)[count] = c;
     d -> count = ++count;
-    return count >= d -> len ? 1 : 0;
+    if (count >= d -> len) {
+        return(1);
+    } else {
+        return(0);
+    }
 }
 
 int CORD_batched_fill_proc(const char * s, void * client_data)
@@ -114,15 +128,15 @@ int CORD_batched_fill_proc(const char * s, void * client_data)
     char * buf = d -> buf;
     const char * t = s;
 
-    while ((buf[count] = *t++) != '\0') {
+    while((buf[count] = *t++) != '\0') {
         count++;
         if (count >= max) {
             d -> count = count;
-            return 1;
+            return(1);
         }
     }
     d -> count = count;
-    return 0;
+    return(0);
 }
 
 /* Fill buf with len characters starting at i.  */
@@ -144,24 +158,30 @@ int CORD_cmp(CORD x, CORD y)
     CORD_pos xpos;
     CORD_pos ypos;
 
-    if (y == CORD_EMPTY) return x != CORD_EMPTY;
-    if (x == CORD_EMPTY) return -1;
-    if (CORD_IS_STRING(y) && CORD_IS_STRING(x)) return strcmp(x, y);
+    if (y == CORD_EMPTY) return(x != CORD_EMPTY);
+    if (x == CORD_EMPTY) return(-1);
+    if (CORD_IS_STRING(y) && CORD_IS_STRING(x)) return(strcmp(x,y));
     CORD_set_pos(xpos, x, 0);
     CORD_set_pos(ypos, y, 0);
     for(;;) {
         size_t avail, yavail;
 
         if (!CORD_pos_valid(xpos)) {
-            return CORD_pos_valid(ypos) ? -1 : 0;
+            if (CORD_pos_valid(ypos)) {
+                return(-1);
+            } else {
+                return(0);
+            }
         }
-        if (!CORD_pos_valid(ypos)) return 1;
+        if (!CORD_pos_valid(ypos)) {
+            return(1);
+        }
         avail = CORD_pos_chars_left(xpos);
-        if (0 == avail
+        if (avail == 0
             || (yavail = CORD_pos_chars_left(ypos)) == 0) {
             char xcurrent = CORD_pos_fetch(xpos);
             char ycurrent = CORD_pos_fetch(ypos);
-            if (xcurrent != ycurrent) return xcurrent - ycurrent;
+            if (xcurrent != ycurrent) return(xcurrent - ycurrent);
             CORD_next(xpos);
             CORD_next(ypos);
         } else {
@@ -171,7 +191,7 @@ int CORD_cmp(CORD x, CORD y)
             if (avail > yavail) avail = yavail;
             result = strncmp(CORD_pos_cur_char_addr(xpos),
                          CORD_pos_cur_char_addr(ypos), avail);
-            if (result != 0) return result;
+            if (result != 0) return(result);
             CORD_pos_advance(xpos, avail);
             CORD_pos_advance(ypos, avail);
         }
@@ -190,15 +210,21 @@ int CORD_ncmp(CORD x, size_t x_start, CORD y, size_t y_start, size_t len)
         long avail, yavail;
 
         if (!CORD_pos_valid(xpos)) {
-            return CORD_pos_valid(ypos) ? -1 : 0;
+            if (CORD_pos_valid(ypos)) {
+                return(-1);
+            } else {
+                return(0);
+            }
         }
-        if (!CORD_pos_valid(ypos)) return 1;
+        if (!CORD_pos_valid(ypos)) {
+            return(1);
+        }
         if ((avail = CORD_pos_chars_left(xpos)) <= 0
             || (yavail = CORD_pos_chars_left(ypos)) <= 0) {
             char xcurrent = CORD_pos_fetch(xpos);
             char ycurrent = CORD_pos_fetch(ypos);
 
-            if (xcurrent != ycurrent) return xcurrent - ycurrent;
+            if (xcurrent != ycurrent) return(xcurrent - ycurrent);
             CORD_next(xpos);
             CORD_next(ypos);
             count++;
@@ -211,13 +237,13 @@ int CORD_ncmp(CORD x, size_t x_start, CORD y, size_t y_start, size_t len)
             if (count > len)
                 avail -= (long)(count - len);
             result = strncmp(CORD_pos_cur_char_addr(xpos),
-                             CORD_pos_cur_char_addr(ypos), (size_t)avail);
-            if (result != 0) return result;
+                         CORD_pos_cur_char_addr(ypos), (size_t)avail);
+            if (result != 0) return(result);
             CORD_pos_advance(xpos, (size_t)avail);
             CORD_pos_advance(ypos, (size_t)avail);
         }
     }
-    return 0;
+    return(0);
 }
 
 char * CORD_to_char_star(CORD x)
@@ -225,11 +251,11 @@ char * CORD_to_char_star(CORD x)
     size_t len = CORD_len(x);
     char * result = (char *)GC_MALLOC_ATOMIC(len + 1);
 
-    if (NULL == result) OUT_OF_MEMORY;
+    if (result == 0) OUT_OF_MEMORY;
     if (len > 0 && CORD_fill_buf(x, 0, len, result) != 1)
       ABORT("CORD_fill_buf malfunction");
     result[len] = '\0';
-    return result;
+    return(result);
 }
 
 CORD CORD_from_char_star(const char *s)
@@ -237,18 +263,18 @@ CORD CORD_from_char_star(const char *s)
     char * result;
     size_t len = strlen(s);
 
-    if (0 == len) return CORD_EMPTY;
+    if (0 == len) return(CORD_EMPTY);
     result = (char *)GC_MALLOC_ATOMIC(len + 1);
-    if (NULL == result) OUT_OF_MEMORY;
+    if (result == 0) OUT_OF_MEMORY;
     memcpy(result, s, len+1);
-    return result;
+    return(result);
 }
 
 const char * CORD_to_const_char_star(CORD x)
 {
-    if (0 == x) return "";
-    if (CORD_IS_STRING(x)) return (const char *)x;
-    return CORD_to_char_star(x);
+    if (x == 0) return("");
+    if (CORD_IS_STRING(x)) return((const char *)x);
+    return(CORD_to_char_star(x));
 }
 
 char CORD_fetch(CORD x, size_t i)
@@ -257,7 +283,7 @@ char CORD_fetch(CORD x, size_t i)
 
     CORD_set_pos(xpos, x, i);
     if (!CORD_pos_valid(xpos)) ABORT("bad index?");
-    return CORD_pos_fetch(xpos);
+    return(CORD_pos_fetch(xpos));
 }
 
 
@@ -265,22 +291,24 @@ int CORD_put_proc(char c, void * client_data)
 {
     FILE * f = (FILE *)client_data;
 
-    return putc(c, f) == EOF;
+    return(putc(c, f) == EOF);
 }
 
 int CORD_batched_put_proc(const char * s, void * client_data)
 {
     FILE * f = (FILE *)client_data;
 
-    return fputs(s, f) == EOF;
+    return(fputs(s, f) == EOF);
 }
 
 
 int CORD_put(CORD x, FILE * f)
 {
-    if (CORD_iter5(x, 0, CORD_put_proc, CORD_batched_put_proc, f))
-        return EOF;
-    return 1;
+    if (CORD_iter5(x, 0, CORD_put_proc, CORD_batched_put_proc, f)) {
+        return(EOF);
+    } else {
+        return(1);
+    }
 }
 
 typedef struct {
@@ -292,18 +320,18 @@ int CORD_chr_proc(char c, void * client_data)
 {
     chr_data * d = (chr_data *)client_data;
 
-    if (c == d -> target) return 1;
-    (d -> pos)++;
-    return 0;
+    if (c == d -> target) return(1);
+    (d -> pos) ++;
+    return(0);
 }
 
 int CORD_rchr_proc(char c, void * client_data)
 {
     chr_data * d = (chr_data *)client_data;
 
-    if (c == d -> target) return 1;
-    (d -> pos)--;
-    return 0;
+    if (c == d -> target) return(1);
+    (d -> pos) --;
+    return(0);
 }
 
 int CORD_batched_chr_proc(const char *s, void * client_data)
@@ -313,10 +341,11 @@ int CORD_batched_chr_proc(const char *s, void * client_data)
 
     if (NULL == occ) {
         d -> pos += strlen(s);
-        return 0;
+        return(0);
+    } else {
+        d -> pos += occ - s;
+        return(1);
     }
-    d -> pos += occ - s;
-    return 1;
 }
 
 size_t CORD_chr(CORD x, size_t i, int c)
@@ -326,9 +355,9 @@ size_t CORD_chr(CORD x, size_t i, int c)
     d.pos = i;
     d.target = (char)c;
     if (CORD_iter5(x, i, CORD_chr_proc, CORD_batched_chr_proc, &d)) {
-        return d.pos;
+        return(d.pos);
     } else {
-        return CORD_NOT_FOUND;
+        return(CORD_NOT_FOUND);
     }
 }
 
@@ -339,9 +368,9 @@ size_t CORD_rchr(CORD x, size_t i, int c)
     d.pos = i;
     d.target = (char)c;
     if (CORD_riter4(x, i, CORD_rchr_proc, &d)) {
-        return d.pos;
+        return(d.pos);
     } else {
-        return CORD_NOT_FOUND;
+        return(CORD_NOT_FOUND);
     }
 }
 
@@ -366,7 +395,7 @@ size_t CORD_str(CORD x, size_t start, CORD s)
     size_t i;
     size_t match_pos;
 
-    if (s == CORD_EMPTY) return start;
+    if (s == CORD_EMPTY) return(start);
     if (CORD_IS_STRING(s)) {
         s_start = s;
         slen = strlen(s);
@@ -374,7 +403,7 @@ size_t CORD_str(CORD x, size_t start, CORD s)
         s_start = CORD_to_char_star(CORD_substr(s, 0, sizeof(unsigned long)));
         slen = CORD_len(s);
     }
-    if (xlen < start || xlen - start < slen) return CORD_NOT_FOUND;
+    if (xlen < start || xlen - start < slen) return(CORD_NOT_FOUND);
     start_len = slen;
     if (start_len > sizeof(unsigned long)) start_len = sizeof(unsigned long);
     CORD_set_pos(xpos, x, start);
@@ -388,17 +417,20 @@ size_t CORD_str(CORD x, size_t start, CORD s)
         CORD_next(xpos);
     }
     for (match_pos = start; ; match_pos++) {
-        if ((x_buf & mask) == s_buf
-            && (slen == start_len
-                || CORD_ncmp(x, match_pos + start_len,
-                             s, start_len, slen - start_len) == 0))
-          break;
-        if (match_pos == xlen - slen) return CORD_NOT_FOUND;
+        if ((x_buf & mask) == s_buf) {
+            if (slen == start_len ||
+                CORD_ncmp(x, match_pos + start_len,
+                      s, start_len, slen - start_len) == 0) {
+                return(match_pos);
+            }
+        }
+    if ( match_pos == xlen - slen ) {
+        return(CORD_NOT_FOUND);
+    }
         x_buf <<= 8;
         x_buf |= (unsigned char)CORD_pos_fetch(xpos);
         CORD_next(xpos);
     }
-    return match_pos;
 }
 
 void CORD_ec_flush_buf(CORD_ec x)
@@ -421,9 +453,8 @@ void CORD_ec_append_cord(CORD_ec x, CORD s)
     x[0].ec_cord = CORD_cat(x[0].ec_cord, s);
 }
 
-char CORD_nul_func(size_t i, void * client_data)
+char CORD_nul_func(size_t i CORD_ATTR_UNUSED, void * client_data)
 {
-    (void)i;
     return (char)(GC_word)client_data;
 }
 
@@ -454,7 +485,7 @@ CORD CORD_from_file_eager(FILE * f)
         CORD_ec_append(ecord, (char)c);
     }
     (void) fclose(f);
-    return CORD_balance(CORD_ec_to_cord(ecord));
+    return(CORD_balance(CORD_ec_to_cord(ecord)));
 }
 
 /* The state maintained for a lazily read file consists primarily       */
@@ -491,7 +522,7 @@ typedef struct {
 # define DIV_CACHE_SZ(n) ((n) >> LOG_CACHE_SZ)
 # define MOD_LINE_SZ(n) ((n) & (LINE_SZ - 1))
 # define DIV_LINE_SZ(n) ((n) >> LOG_LINE_SZ)
-# define LINE_START(n) ((n) & ~(LINE_SZ - 1))
+# define LINE_START(n) ((n) & ~(size_t)(LINE_SZ - 1))
 
 typedef struct {
     lf_state * state;
@@ -518,20 +549,37 @@ static void * GC_CALLBACK refill_cache(void * client_data)
         ABORT("fread failed");
     }
     new_cache -> tag = DIV_LINE_SZ(file_pos);
-    /* Store barrier goes here. */
-    ATOMIC_WRITE(state -> lf_cache[line_no], new_cache);
+#   ifdef CORD_USE_GCC_ATOMIC
+        __atomic_store_n(&(state -> lf_cache[line_no]), new_cache,
+                         __ATOMIC_RELEASE);
+#   else
+        state -> lf_cache[line_no] = new_cache;
+#   endif
     GC_END_STUBBORN_CHANGE((/* no volatile */ void *)(state -> lf_cache
                                                       + line_no));
     state -> lf_current = line_start + LINE_SZ;
     return (void *)((GC_word)new_cache->data[MOD_LINE_SZ(file_pos)]);
 }
 
+#ifndef CORD_USE_GCC_ATOMIC
+  static void * GC_CALLBACK get_cache_line(void * client_data)
+  {
+    return (void *)(*(cache_line **)client_data);
+  }
+#endif
+
 char CORD_lf_func(size_t i, void * client_data)
 {
     lf_state * state = (lf_state *)client_data;
     cache_line * volatile * cl_addr =
                         &(state -> lf_cache[DIV_LINE_SZ(MOD_CACHE_SZ(i))]);
-    cache_line * cl = (cache_line *)ATOMIC_READ(cl_addr);
+#   ifdef CORD_USE_GCC_ATOMIC
+        cache_line * cl = (cache_line *)__atomic_load_n(cl_addr,
+                                                        __ATOMIC_ACQUIRE);
+#   else
+        cache_line * cl = (cache_line *)GC_call_with_alloc_lock(
+                                            get_cache_line, (void *)cl_addr);
+#   endif
 
     if (cl == 0 || cl -> tag != DIV_LINE_SZ(i)) {
         /* Cache miss */
@@ -540,18 +588,18 @@ char CORD_lf_func(size_t i, void * client_data)
         rd.state = state;
         rd.file_pos =  i;
         rd.new_cache = GC_NEW_ATOMIC(cache_line);
-        if (NULL == rd.new_cache) OUT_OF_MEMORY;
+        if (rd.new_cache == 0) OUT_OF_MEMORY;
         return (char)((GC_word)GC_call_with_alloc_lock(refill_cache, &rd));
     }
-    return cl -> data[MOD_LINE_SZ(i)];
+    return(cl -> data[MOD_LINE_SZ(i)]);
 }
 
 #ifndef GC_NO_FINALIZATION
-  void CORD_lf_close_proc(void * obj, void * client_data)
+  void CORD_lf_close_proc(void * obj, void * client_data CORD_ATTR_UNUSED)
   {
-    (void)client_data;
-    if (fclose(((lf_state *)obj) -> lf_file) != 0)
+    if (fclose(((lf_state *)obj) -> lf_file) != 0) {
         ABORT("CORD_lf_close_proc: fclose failed");
+    }
   }
 #endif
 
@@ -560,7 +608,7 @@ CORD CORD_from_file_lazy_inner(FILE * f, size_t len)
     lf_state * state = GC_NEW(lf_state);
     int i;
 
-    if (NULL == state) OUT_OF_MEMORY;
+    if (state == 0) OUT_OF_MEMORY;
     if (len != 0) {
         /* Dummy read to force buffer allocation.       */
         /* This greatly increases the probability       */
@@ -582,7 +630,7 @@ CORD CORD_from_file_lazy_inner(FILE * f, size_t len)
 #   ifndef GC_NO_FINALIZATION
       GC_REGISTER_FINALIZER(state, CORD_lf_close_proc, 0, 0, 0);
 #   endif
-    return CORD_from_fn(CORD_lf_func, state, len);
+    return(CORD_from_fn(CORD_lf_func, state, len));
 }
 
 CORD CORD_from_file_lazy(FILE * f)
@@ -594,7 +642,7 @@ CORD CORD_from_file_lazy(FILE * f)
         || fseek(f, 0l, SEEK_SET) != 0) {
         ABORT("Bad f argument or I/O failure");
     }
-    return CORD_from_file_lazy_inner(f, (size_t)len);
+    return(CORD_from_file_lazy_inner(f, (size_t)len));
 }
 
 # define LAZY_THRESHOLD (128*1024 + 1)
@@ -609,7 +657,8 @@ CORD CORD_from_file(FILE * f)
         ABORT("Bad f argument or I/O failure");
     }
     if (len < LAZY_THRESHOLD) {
-        return CORD_from_file_eager(f);
+        return(CORD_from_file_eager(f));
+    } else {
+        return(CORD_from_file_lazy_inner(f, (size_t)len));
     }
-    return CORD_from_file_lazy_inner(f, (size_t)len);
 }

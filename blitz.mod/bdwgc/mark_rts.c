@@ -1,19 +1,21 @@
 /*
  * Copyright 1988, 1989 Hans-J. Boehm, Alan J. Demers
  * Copyright (c) 1991-1994 by Xerox Corporation.  All rights reserved.
- * Copyright (c) 2009-2022 Ivan Maidanski
+ * Copyright (c) 2009-2024 Ivan Maidanski
  *
  * THIS MATERIAL IS PROVIDED AS IS, WITH ABSOLUTELY NO WARRANTY EXPRESSED
  * OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
  *
  * Permission is hereby granted to use or copy this program
- * for any purpose, provided the above notices are retained on all copies.
+ * for any purpose,  provided the above notices are retained on all copies.
  * Permission to modify the code and to distribute modified code is granted,
  * provided the above notices are retained, and a notice that the code was
  * modified is included with the above copyright notice.
  */
 
 #include "private/gc_priv.h"
+
+#include <stdio.h>
 
 /* Data structure for list of root sets.                                */
 /* We keep a hash table, so that we can filter out duplicate additions. */
@@ -81,15 +83,15 @@ int GC_no_dls = 0;      /* Register dynamic library data segments.      */
     if (last_root_set < n_root_sets
         && (word)p >= (word)GC_static_roots[last_root_set].r_start
         && (word)p < (word)GC_static_roots[last_root_set].r_end)
-      return TRUE;
+      return(TRUE);
     for (i = 0; i < n_root_sets; i++) {
         if ((word)p >= (word)GC_static_roots[i].r_start
             && (word)p < (word)GC_static_roots[i].r_end) {
           last_root_set = i;
-          return TRUE;
+          return(TRUE);
         }
     }
-    return FALSE;
+    return(FALSE);
   }
 #endif /* !THREADS */
 
@@ -107,7 +109,6 @@ int GC_no_dls = 0;      /* Register dynamic library data segments.      */
   GC_INLINE int rt_hash(ptr_t addr)
   {
     word result = (word) addr;
-
 #   if CPP_WORDSZ > 8*LOG_RT_SIZE
         result ^= result >> 8*LOG_RT_SIZE;
 #   endif
@@ -116,7 +117,8 @@ int GC_no_dls = 0;      /* Register dynamic library data segments.      */
 #   endif
     result ^= result >> 2*LOG_RT_SIZE;
     result ^= result >> LOG_RT_SIZE;
-    return result & (RT_SIZE-1);
+    result &= (RT_SIZE-1);
+    return(result);
   }
 
   /* Is a range starting at b already in the table? If so return a      */
@@ -124,12 +126,13 @@ int GC_no_dls = 0;      /* Register dynamic library data segments.      */
   GC_INNER void * GC_roots_present(ptr_t b)
   {
     int h = rt_hash(b);
-    struct roots *p;
+    struct roots *p = GC_root_index[h];
 
-    for (p = GC_root_index[h]; p != NULL; p = p -> r_next) {
-        if (p -> r_start == (ptr_t)b) break;
+    while (p != 0) {
+        if (p -> r_start == (ptr_t)b) return(p);
+        p = p -> r_next;
     }
-    return p;
+    return NULL;
   }
 
   /* Add the given root structure to the index. */
@@ -164,10 +167,10 @@ GC_API void GC_CALL GC_add_roots(void *b, void *e)
 void GC_add_roots_inner(ptr_t b, ptr_t e, GC_bool tmp)
 {
     GC_ASSERT((word)b <= (word)e);
-    b = (ptr_t)(((word)b + (sizeof(word) - 1)) & ~(word)(sizeof(word) - 1));
-                                        /* round b up to word boundary */
-    e = (ptr_t)((word)e & ~(word)(sizeof(word) - 1));
-                                        /* round e down to word boundary */
+    b = (ptr_t)(((word)b + (ALIGNMENT - 1)) & ~(word)(ALIGNMENT - 1));
+                        /* round b up to pointer alignment boundary */
+    e = (ptr_t)((word)e & ~(word)(ALIGNMENT - 1));
+                        /* round e down to pointer alignment boundary */
     if ((word)b >= (word)e) return; /* nothing to do */
 
 #   if defined(MSWIN32) || defined(MSWINCE) || defined(CYGWIN32)
@@ -286,9 +289,9 @@ GC_API void GC_CALL GC_clear_roots(void)
     UNLOCK();
 }
 
+/* Internal use only; lock held.        */
 STATIC void GC_remove_root_at_pos(int i)
 {
-    GC_ASSERT(I_HOLD_LOCK());
 #   ifdef DEBUG_ADD_DEL_ROOTS
       GC_log_printf("Remove data root section at %d: %p .. %p%s\n",
                     i, (void *)GC_static_roots[i].r_start,
@@ -314,6 +317,7 @@ STATIC void GC_remove_root_at_pos(int i)
 
 #if defined(DYNAMIC_LOADING) || defined(MSWIN32) || defined(MSWINCE) \
      || defined(PCR) || defined(CYGWIN32)
+/* Internal use only; lock held.        */
 STATIC void GC_remove_tmp_roots(void)
 {
     int i;
@@ -321,7 +325,6 @@ STATIC void GC_remove_tmp_roots(void)
       int old_n_roots = n_root_sets;
 #   endif
 
-    GC_ASSERT(I_HOLD_LOCK());
     for (i = 0; i < n_root_sets; ) {
         if (GC_static_roots[i].r_tmp) {
             GC_remove_root_at_pos(i);
@@ -343,8 +346,8 @@ GC_API void GC_CALL GC_remove_roots(void *b, void *e)
     DCL_LOCK_STATE;
 
     /* Quick check whether has nothing to do */
-    if ((((word)b + (sizeof(word) - 1)) & ~(word)(sizeof(word) - 1)) >=
-        ((word)e & ~(word)(sizeof(word) - 1)))
+    if ((((word)b + (ALIGNMENT - 1)) & ~(word)(ALIGNMENT - 1)) >=
+        ((word)e & ~(word)(ALIGNMENT - 1)))
       return;
 
     LOCK();
@@ -352,6 +355,7 @@ GC_API void GC_CALL GC_remove_roots(void *b, void *e)
     UNLOCK();
 }
 
+/* Should only be called when the lock is held */
 STATIC void GC_remove_roots_inner(ptr_t b, ptr_t e)
 {
     int i;
@@ -359,7 +363,6 @@ STATIC void GC_remove_roots_inner(ptr_t b, ptr_t e)
       int old_n_roots = n_root_sets;
 #   endif
 
-    GC_ASSERT(I_HOLD_LOCK());
     for (i = 0; i < n_root_sets; ) {
         if ((word)GC_static_roots[i].r_start >= (word)b
             && (word)GC_static_roots[i].r_end <= (word)e) {
@@ -374,7 +377,7 @@ STATIC void GC_remove_roots_inner(ptr_t b, ptr_t e)
 #   endif
 }
 
-#ifdef USE_PROC_FOR_LIBRARIES
+#if defined(USE_PROC_FOR_LIBRARIES) && defined(LINUX)
   /* Exchange the elements of the roots table.  Requires rebuild of     */
   /* the roots index table after the swap.                              */
   GC_INLINE void swap_static_roots(int i, int j)
@@ -401,7 +404,7 @@ STATIC void GC_remove_roots_inner(ptr_t b, ptr_t e)
     GC_bool rebuild = FALSE;
 
     GC_ASSERT(I_HOLD_LOCK());
-    GC_ASSERT((word)b % sizeof(word) == 0 && (word)e % sizeof(word) == 0);
+    GC_ASSERT((word)b % ALIGNMENT == 0 && (word)e % ALIGNMENT == 0);
     for (i = 0; i < n_root_sets; i++) {
       ptr_t r_start, r_end;
 
@@ -469,7 +472,7 @@ STATIC void GC_remove_roots_inner(ptr_t b, ptr_t e)
     if (rebuild)
       GC_rebuild_root_index();
   }
-#endif /* USE_PROC_FOR_LIBRARIES */
+#endif
 
 #if !defined(NO_DEBUGGING)
   /* For the debugging purpose only.                                    */
@@ -491,7 +494,7 @@ STATIC void GC_remove_roots_inner(ptr_t b, ptr_t e)
             return GC_static_roots[i].r_tmp;
         }
     }
-    return FALSE;
+    return(FALSE);
   }
 #endif /* !NO_DEBUGGING */
 
@@ -514,7 +517,7 @@ GC_INNER ptr_t GC_approx_sp(void)
                 /* Also force stack to grow if necessary. Otherwise the */
                 /* later accesses might cause the kernel to think we're */
                 /* doing something wrong.                               */
-    return (ptr_t)sp;
+    return((ptr_t)sp);
 }
 
 /*
@@ -560,14 +563,14 @@ STATIC struct exclusion * GC_next_exclusion(ptr_t start_addr)
     return GC_excl_table + low;
 }
 
-/* The range boundaries should be properly aligned and valid.   */
+/* Should only be called when the lock is held.  The range boundaries   */
+/* should be properly aligned and valid.                                */
 GC_INNER void GC_exclude_static_roots_inner(void *start, void *finish)
 {
     struct exclusion * next;
     size_t next_index;
 
-    GC_ASSERT(I_HOLD_LOCK());
-    GC_ASSERT((word)start % sizeof(word) == 0);
+    GC_ASSERT((word)start % ALIGNMENT == 0);
     GC_ASSERT((word)start < (word)finish);
 
     if (0 == GC_excl_table_entries) {
@@ -575,9 +578,7 @@ GC_INNER void GC_exclude_static_roots_inner(void *start, void *finish)
     } else {
         next = GC_next_exclusion((ptr_t)start);
     }
-    if (0 != next) {
-      size_t i;
-
+    if (next != NULL) {
       if ((word)(next -> e_start) < (word) finish) {
         /* incomplete error check. */
         ABORT("Exclusion ranges overlap");
@@ -587,14 +588,18 @@ GC_INNER void GC_exclude_static_roots_inner(void *start, void *finish)
           next -> e_start = (ptr_t)start;
           return;
       }
-      next_index = next - GC_excl_table;
+    }
+
+    next_index = GC_excl_table_entries;
+    if (next_index >= MAX_EXCLUSIONS) ABORT("Too many exclusions");
+    if (next != NULL) {
+      size_t i;
+
+      next_index = (size_t)(next - GC_excl_table);
       for (i = GC_excl_table_entries; i > next_index; --i) {
         GC_excl_table[i] = GC_excl_table[i-1];
       }
-    } else {
-      next_index = GC_excl_table_entries;
     }
-    if (GC_excl_table_entries == MAX_EXCLUSIONS) ABORT("Too many exclusions");
     GC_excl_table[next_index].e_start = (ptr_t)start;
     GC_excl_table[next_index].e_end = (ptr_t)finish;
     ++GC_excl_table_entries;
@@ -607,10 +612,12 @@ GC_API void GC_CALL GC_exclude_static_roots(void *b, void *e)
     if (b == e) return;  /* nothing to exclude? */
 
     /* Round boundaries (in direction reverse to that of GC_add_roots). */
-    b = (void *)((word)b & ~(word)(sizeof(word) - 1));
-    e = (void *)(((word)e + (sizeof(word) - 1)) & ~(word)(sizeof(word) - 1));
-    if (NULL == e)
-      e = (void *)(~(word)(sizeof(word) - 1)); /* handle overflow */
+#   if ALIGNMENT > 1
+      b = (void *)((word)b & ~(word)(ALIGNMENT - 1));
+      e = (void *)(((word)e + (ALIGNMENT - 1)) & ~(word)(ALIGNMENT - 1));
+      if (NULL == e)
+        e = (void *)(~(word)(ALIGNMENT - 1)); /* handle overflow */
+#   endif
 
     LOCK();
     GC_exclude_static_roots_inner(b, e);
@@ -676,15 +683,16 @@ STATIC void GC_push_conditional_with_exclusions(ptr_t bottom, ptr_t top,
 
 #ifdef THREADS
 
-GC_INNER void GC_push_all_stack_sections(ptr_t lo, ptr_t hi,
+GC_INNER void GC_push_all_stack_sections(
+                        ptr_t lo /* top */, ptr_t hi /* bottom */,
                         struct GC_traced_stack_sect_s *traced_stack_sect)
 {
     while (traced_stack_sect != NULL) {
         GC_ASSERT((word)lo HOTTER_THAN (word)traced_stack_sect);
 #       ifdef STACK_GROWS_UP
-            GC_push_all_stack((ptr_t)traced_stack_sect, lo);
+            GC_push_all_stack(traced_stack_sect, lo);
 #       else /* STACK_GROWS_DOWN */
-            GC_push_all_stack(lo, (ptr_t)traced_stack_sect);
+            GC_push_all_stack(lo, traced_stack_sect);
 #       endif
         lo = traced_stack_sect -> saved_stack_ptr;
         GC_ASSERT(lo != NULL);
@@ -717,7 +725,7 @@ GC_INNER void GC_push_all_stack_sections(ptr_t lo, ptr_t hi,
  * GC_dirty() call.
  */
 STATIC void GC_push_all_stack_partially_eager(ptr_t bottom, ptr_t top,
-                                              ptr_t cold_gc_frame)
+        ptr_t cold_gc_frame GC_ATTR_UNUSED)
 {
 #ifndef NEED_FIXUP_POINTER
   if (GC_all_interior_pointers) {
@@ -748,8 +756,9 @@ STATIC void GC_push_all_stack_partially_eager(ptr_t bottom, ptr_t top,
 }
 
 /* Similar to GC_push_all_stack_sections() but also uses cold_gc_frame. */
-STATIC void GC_push_all_stack_part_eager_sections(ptr_t lo, ptr_t hi,
-        ptr_t cold_gc_frame, struct GC_traced_stack_sect_s *traced_stack_sect)
+STATIC void GC_push_all_stack_part_eager_sections(
+        ptr_t lo /* top */, ptr_t hi /* bottom */, ptr_t cold_gc_frame,
+        struct GC_traced_stack_sect_s *traced_stack_sect)
 {
     GC_ASSERT(traced_stack_sect == NULL || cold_gc_frame == NULL ||
               (word)cold_gc_frame HOTTER_THAN (word)traced_stack_sect);
@@ -788,9 +797,9 @@ STATIC void GC_push_all_stack_part_eager_sections(ptr_t lo, ptr_t hi,
 /* enough of the current stack to ensure that callee-save registers     */
 /* saved in collector frames have been seen.                            */
 /* TODO: Merge it with per-thread stuff. */
-STATIC void GC_push_current_stack(ptr_t cold_gc_frame, void *context)
+STATIC void GC_push_current_stack(ptr_t cold_gc_frame,
+                                  void * context GC_ATTR_UNUSED)
 {
-    UNUSED_ARG(context);
 #   if defined(THREADS)
         /* cold_gc_frame is non-NULL.   */
 #       ifdef STACK_GROWS_DOWN
@@ -852,7 +861,6 @@ GC_INNER void (*GC_push_typed_structures)(void) = 0;
 
 GC_INNER void GC_cond_register_dynamic_libraries(void)
 {
-  GC_ASSERT(I_HOLD_LOCK());
 # if (defined(DYNAMIC_LOADING) && !defined(MSWIN_XBOX1)) \
      || defined(CYGWIN32) || defined(MSWIN32) || defined(MSWINCE) \
      || defined(PCR)
@@ -877,14 +885,12 @@ STATIC void GC_push_regs_and_stack(ptr_t cold_gc_frame)
 /* accessible pointer.  If all is false, arrange to push only possibly  */
 /* altered values.  Cold_gc_frame is an address inside a GC frame that  */
 /* remains valid until all marking is complete; a NULL value indicates  */
-/* that it is OK to miss some register values.                          */
-GC_INNER void GC_push_roots(GC_bool all, ptr_t cold_gc_frame)
+/* that it is OK to miss some register values.  Called with the         */
+/* allocation lock held.                                                */
+GC_INNER void GC_push_roots(GC_bool all, ptr_t cold_gc_frame GC_ATTR_UNUSED)
 {
     int i;
     unsigned kind;
-
-    GC_ASSERT(I_HOLD_LOCK());
-    GC_ASSERT(GC_is_initialized); /* needed for GC_push_all_stacks */
 
     /* Next push static data.  This must happen early on, since it is   */
     /* not robust against mark stack overflow.                          */
@@ -943,9 +949,7 @@ GC_INNER void GC_push_roots(GC_bool all, ptr_t cold_gc_frame)
     /* overflow the mark stack.  This is usually done by saving */
     /* the current context on the stack, and then just tracing  */
     /* from the stack.                                          */
-#   ifdef STACK_NOT_SCANNED
-        UNUSED_ARG(cold_gc_frame);
-#   else
+#   ifndef STACK_NOT_SCANNED
         GC_push_regs_and_stack(cold_gc_frame);
 #   endif
 

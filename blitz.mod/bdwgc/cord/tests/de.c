@@ -5,7 +5,7 @@
  * OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
  *
  * Permission is hereby granted to use or copy this program
- * for any purpose, provided the above notices are retained on all copies.
+ * for any purpose,  provided the above notices are retained on all copies.
  * Permission to modify the code and to distribute modified code is granted,
  * provided the above notices are retained, and a notice that the code was
  * modified is included with the above copyright notice.
@@ -30,7 +30,7 @@
 #include <stdlib.h> /* for exit() */
 
 #include "gc.h"
-#include "gc/cord.h"
+#include "cord.h"
 
 #ifdef THINK_C
 #define MACINTOSH
@@ -44,33 +44,33 @@
 #endif
 
 #if defined(WIN32)
-# ifndef WIN32_LEAN_AND_MEAN
-#   define WIN32_LEAN_AND_MEAN 1
-# endif
-# define NOSERVICE
-# include <windows.h>
-# include "de_win.h"
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN 1
+#  endif
+#  define NOSERVICE
+#  include <windows.h>
+#  include "de_win.h"
 #elif defined(MACINTOSH)
-# include <console.h>
+#       include <console.h>
 /* curses emulation. */
-# define initscr()
-# define endwin()
-# define nonl()
-# define noecho() csetmode(C_NOECHO, stdout)
-# define cbreak() csetmode(C_CBREAK, stdout)
-# define refresh()
-# define addch(c) putchar(c)
-# define standout() cinverse(1, stdout)
-# define standend() cinverse(0, stdout)
-# define move(line,col) cgotoxy(col + 1, line + 1, stdout)
-# define clrtoeol() ccleol(stdout)
-# define de_error(s) { fprintf(stderr, s); getchar(); }
-# define LINES 25
-# define COLS 80
+#       define initscr()
+#       define endwin()
+#       define nonl()
+#       define noecho() csetmode(C_NOECHO, stdout)
+#       define cbreak() csetmode(C_CBREAK, stdout)
+#       define refresh()
+#       define addch(c) putchar(c)
+#       define standout() cinverse(1, stdout)
+#       define standend() cinverse(0, stdout)
+#       define move(line,col) cgotoxy(col + 1, line + 1, stdout)
+#       define clrtoeol() ccleol(stdout)
+#       define de_error(s) { fprintf(stderr, s); getchar(); }
+#       define LINES 25
+#       define COLS 80
 #else
-# include <curses.h>
-# include <unistd.h> /* for sleep() */
-# define de_error(s) { fprintf(stderr, s); sleep(2); }
+#  include <curses.h>
+#  include <unistd.h> /* for sleep() */
+#  define de_error(s) { fprintf(stderr, s); sleep(2); }
 #endif
 #include "de_cmds.h"
 
@@ -128,7 +128,9 @@ size_t file_pos = 0;    /* Character position corresponding to cursor.  */
 /* Invalidate line map for lines > i */
 void invalidate_map(int i)
 {
-    while(current_map -> line > i) {
+    for (;;) {
+        if (NULL == current_map) exit(4); /* for CSA, should not happen */
+        if (current_map -> line <= i) break;
         current_map = current_map -> previous;
         current_map_size--;
     }
@@ -169,8 +171,6 @@ void add_map(int line_arg, size_t pos)
     current_map_size++;
 }
 
-
-
 /* Return position of column *c of ith line in   */
 /* current file. Adjust *c to be within the line.*/
 /* A 0 pointer is taken as 0 column.             */
@@ -186,7 +186,7 @@ size_t line_pos(int i, int *c)
     if (map -> line < i - 2) /* rebuild */ invalidate_map(i);
     for (j = map -> line, cur = map -> pos; j < i;) {
         cur = CORD_chr(current, cur, '\n');
-        if (cur == current_len-1) return CORD_NOT_FOUND;
+        if (cur == current_len-1) return(CORD_NOT_FOUND);
         cur++;
         if (++j > current_map -> line) add_map(j, cur);
     }
@@ -199,7 +199,7 @@ size_t line_pos(int i, int *c)
         }
         cur += *c;
     }
-    return cur;
+    return(cur);
 }
 
 void add_hist(CORD s)
@@ -233,9 +233,10 @@ int screen_size = 0;
 # ifndef WIN32
 /* Replace a line in the curses stdscr. All control characters are      */
 /* displayed as upper case characters in standout mode.  This isn't     */
-/* terribly appropriate for tabs.                                                                       */
+/* terribly appropriate for tabs.                                       */
 void replace_line(int i, CORD s)
 {
+    CORD_pos p;
 #   if !defined(MACINTOSH)
         size_t len = CORD_len(s);
 #   endif
@@ -252,8 +253,6 @@ void replace_line(int i, CORD s)
         }
 #   endif
     if (CORD_cmp(screen[i], s) != 0) {
-        CORD_pos p;
-
         move(i, 0); clrtoeol(); move(i,0);
 
         CORD_FOR (p, s) {
@@ -284,7 +283,7 @@ CORD retrieve_line(CORD s, size_t pos, unsigned column)
     if (eol == CORD_NOT_FOUND) eol = CORD_len(candidate);
     len = (int)eol - (int)column;
     if (len < 0) len = 0;
-    return CORD_substr(s, pos + column, len);
+    return(CORD_substr(s, pos + column, len));
 }
 
 # ifdef WIN32
@@ -296,8 +295,8 @@ CORD retrieve_line(CORD s, size_t pos, unsigned column)
 
         invalidate_map(dis_line + LINES);       /* Prune search */
         pos = line_pos(dis_line + i, 0);
-        if (pos == CORD_NOT_FOUND) return CORD_EMPTY;
-        return retrieve_line(current, pos, dis_col);
+        if (pos == CORD_NOT_FOUND) return(CORD_EMPTY);
+        return(retrieve_line(current, pos, dis_col));
     }
 # endif
 
@@ -383,9 +382,9 @@ void fix_pos(void)
 }
 
 #if defined(WIN32)
-# define beep() Beep(1000 /* Hz */, 300 /* ms */)
+#  define beep() Beep(1000 /* Hz */, 300 /* ms */)
 #elif defined(MACINTOSH)
-# define beep() SysBeep(1)
+#  define beep() SysBeep(1)
 #else
 /*
  * beep() is part of some curses packages and not others.
@@ -394,7 +393,7 @@ void fix_pos(void)
   int beep(void)
   {
     putc('\007', stderr);
-    return 0;
+    return(0);
   }
 #endif /* !WIN32 && !MACINTOSH */
 
@@ -613,8 +612,8 @@ int main(int argc, char **argv)
     if (argc != 2) {
         fprintf(stderr, "Usage: %s file\n", argv[0]);
         fprintf(stderr, "Cursor keys: ^B(left) ^F(right) ^P(up) ^N(down)\n");
-        fprintf(stderr, "Undo: ^U    Write to <file>.new: ^W");
-        fprintf(stderr, "Quit:^D     Repeat count: ^R[n]\n");
+        fprintf(stderr, "Undo: ^U    Write to <file>.new: ^W\n");
+        fprintf(stderr, "Quit: ^D    Repeat count: ^R[n]\n");
         fprintf(stderr, "Top: ^T     Locate (search, find): ^L text ^L\n");
         exit(1);
     }

@@ -1,13 +1,13 @@
 /*
  * Copyright 1988, 1989 Hans-J. Boehm, Alan J. Demers
  * Copyright (c) 1991-1994 by Xerox Corporation.  All rights reserved.
- * Copyright (c) 2008-2022 Ivan Maidanski
+ * Copyright (c) 2008-2023 Ivan Maidanski
  *
  * THIS MATERIAL IS PROVIDED AS IS, WITH ABSOLUTELY NO WARRANTY EXPRESSED
  * OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
  *
  * Permission is hereby granted to use or copy this program
- * for any purpose, provided the above notices are retained on all copies.
+ * for any purpose,  provided the above notices are retained on all copies.
  * Permission to modify the code and to distribute modified code is granted,
  * provided the above notices are retained, and a notice that the code was
  * modified is included with the above copyright notice.
@@ -16,6 +16,8 @@
 #include "private/gc_priv.h"
 
 #if !defined(PLATFORM_MACH_DEP) && !defined(SN_TARGET_PSP2)
+
+#include <stdio.h>
 
 #ifdef AMIGA
 # ifndef __GNUC__
@@ -32,11 +34,11 @@
 # include <sys/syscall.h>
 
   GC_INNER size_t GC_get_procedure_stack(ptr_t buf, size_t buf_sz) {
-    unsigned long long new_sz;
+    word new_sz;
 
     GC_ASSERT(0 == buf_sz || buf != NULL);
     for (;;) {
-      unsigned long long stack_ofs;
+      word stack_ofs;
 
       new_sz = 0;
       if (syscall(__NR_access_hw_stacks, E2K_GET_PROCEDURE_STACK_SIZE,
@@ -174,8 +176,9 @@
 
 #endif /* MACOS && __MWERKS__ */
 
-# if defined(IA64) && !defined(THREADS)
-    /* Value returned from register flushing routine (ar.bsp).  */
+# if defined(SPARC) || defined(IA64)
+    /* Value returned from register flushing routine; either sp (SPARC) */
+    /* or ar.bsp (IA64).                                                */
     GC_INNER ptr_t GC_save_regs_ret_val = NULL;
 # endif
 
@@ -304,8 +307,6 @@
 /* Ensure that either registers are pushed, or callee-save registers    */
 /* are somewhere on the stack, and then call fn(arg, ctxt).             */
 /* ctxt is either a pointer to a ucontext_t we generated, or NULL.      */
-/* Could be called with or w/o the GC lock held; could be called from   */
-/* a signal handler as well.                                            */
 GC_ATTR_NO_SANITIZE_ADDR
 GC_INNER void GC_with_callee_saves_pushed(void (*fn)(ptr_t, void *),
                                           volatile ptr_t arg)
@@ -373,7 +374,7 @@ GC_INNER void GC_with_callee_saves_pushed(void (*fn)(ptr_t, void *),
         /* On a register window machine, we need to save register       */
         /* contents on the stack for this to work.  This may already be */
         /* subsumed by the getcontext() call.                           */
-#       if defined(IA64) && !defined(THREADS)
+#       if defined(IA64) || defined(SPARC)
           GC_save_regs_ret_val =
 #       endif
             GC_save_regs_in_stack();
@@ -395,17 +396,18 @@ GC_INNER void GC_with_callee_saves_pushed(void (*fn)(ptr_t, void *),
         /* We're not sure whether he would like  */
         /* to be acknowledged for it or not.     */
         jmp_buf regs;
-        word * i = (word *)&regs;
-        ptr_t lim = (ptr_t)(&regs) + sizeof(regs);
+        word *i = (word *)&regs[0];
+        ptr_t lim = (ptr_t)(&regs[0]) + sizeof(regs);
 
-        /* setjmp doesn't always clear all of the buffer.               */
+        /* Setjmp doesn't always clear all of the buffer.               */
         /* That tends to preserve garbage.  Clear it.                   */
         for (; (word)i < (word)lim; i++) {
             *i = 0;
         }
 #       if defined(MSWIN32) || defined(MSWINCE) || defined(UTS4) \
            || defined(OS2) || defined(CX_UX) || defined(__CC_ARM) \
-           || defined(LINUX) || defined(EWS4800) || defined(RTEMS)
+           || defined(LINUX) || defined(EWS4800) || defined(RTEMS) \
+           || defined(DJGPP)
           (void) setjmp(regs);
 #       else
           (void) _setjmp(regs);

@@ -5,19 +5,19 @@
  * OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
  *
  * Permission is hereby granted to use or copy this program
- * for any purpose, provided the above notices are retained on all copies.
+ * for any purpose,  provided the above notices are retained on all copies.
  * Permission to modify the code and to distribute modified code is granted,
  * provided the above notices are retained, and a notice that the code was
  * modified is included with the above copyright notice.
  */
 
+# include "gc.h"
+# include "cord.h"
+
 # include <stdarg.h>
 # include <string.h>
 # include <stdio.h>
 # include <stdlib.h>
-
-#include "gc.h"    /* For GC_INIT() only */
-#include "gc/cord.h"
 
 /* This is a very incomplete test of the cord package.  It knows about  */
 /* a few internals of the package (e.g. when C strings are returned)    */
@@ -49,18 +49,18 @@ int test_fn(char c, void * client_data)
             if (c != 'a') ABORT("bad char");
         }
         count++;
-        return 0;
+        return(0);
     } else {
         if (c != 'c') ABORT("bad char");
         count++;
-        return 1;
+        return(1);
     }
 }
 
 char id_cord_fn(size_t i, void * client_data)
 {
     if (client_data != 0) ABORT("id_cord_fn: bad client data");
-    return (char)i;
+    return((char)i);
 }
 
 void test_basics(void)
@@ -92,7 +92,7 @@ void test_basics(void)
     CORD_set_pos(p, x, 64*1024-1);
     while(CORD_pos_valid(p)) {
         (void)test_fn(CORD_pos_fetch(p), (void *)(GC_word)13);
-    CORD_next(p);
+        CORD_next(p);
     }
     if (count != 64*1024 + 2) ABORT("Position based iteration failed");
 
@@ -230,9 +230,6 @@ void test_extras(void)
         /* But we cannot call fclose as it might lead to double close.   */
         fprintf(stderr, "WARNING: remove failed: " FNAME1 "\n");
     }
-    if (remove(FNAME2) != 0) {
-        fprintf(stderr, "WARNING: remove failed: " FNAME2 "\n");
-    }
 }
 
 int wrap_vprintf(CORD format, ...)
@@ -257,7 +254,7 @@ int wrap_vfprintf(FILE * f, CORD format, ...)
     return result;
 }
 
-#if defined(__DJGPP__) || defined(__STRICT_ANSI__)
+#if defined(__DJGPP__) || defined(__DMC__) || defined(__STRICT_ANSI__)
   /* snprintf is missing in DJGPP (v2.0.3) */
 #else
 # if defined(_MSC_VER)
@@ -344,6 +341,11 @@ int main(void)
     test_basics();
     test_extras();
     test_printf();
+
+    GC_gcollect(); /* to close f2 before the file removal */
+    if (remove(FNAME2) != 0) {
+        fprintf(stderr, "WARNING: remove failed: " FNAME2 "\n");
+    }
     CORD_fprintf(stdout, "SUCCEEDED\n");
-    return 0;
+    return(0);
 }

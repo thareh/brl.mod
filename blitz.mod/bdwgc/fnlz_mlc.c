@@ -5,7 +5,7 @@
  * OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
  *
  * Permission is hereby granted to use or copy this program
- * for any purpose, provided the above notices are retained on all copies.
+ * for any purpose,  provided the above notices are retained on all copies.
  * Permission to modify the code and to distribute modified code is granted,
  * provided the above notices are retained, and a notice that the code was
  * modified is included with the above copyright notice.
@@ -16,7 +16,8 @@
 
 #ifdef ENABLE_DISCLAIM
 
-#include "gc/gc_disclaim.h"
+#include "gc_disclaim.h"
+#include "gc_inline.h" /* for GC_malloc_kind */
 #include "private/dbg_mlc.h" /* for oh type */
 
 #if defined(KEEP_BACK_PTRS) || defined(MAKE_BACK_GRAPH)
@@ -41,7 +42,7 @@ STATIC int GC_CALLBACK GC_finalized_disclaim(void *obj)
        /* on such fragments is always multiple of 4 (a link to the next */
        /* fragment, or NULL).  If it is desirable to have a finalizer   */
        /* which does not use the first word for storing finalization    */
-       /* info, GC_reclaim_with_finalization must be extended to clear  */
+       /* info, GC_disclaim_and_reclaim() must be extended to clear     */
        /* fragments so that the assumption holds for the selected word. */
         const struct GC_finalizer_closure *fc
                         = (struct GC_finalizer_closure *)(fc_word
@@ -86,7 +87,6 @@ GC_API void GC_CALL GC_register_disclaim_proc(int kind, GC_disclaim_proc proc,
                                               int mark_unconditionally)
 {
     GC_ASSERT((unsigned)kind < MAXOBJKINDS);
-    GC_ASSERT(NONNULL_ARG_NOT_NULL(proc));
     if (!EXPECT(GC_find_leak, FALSE)) {
         GC_obj_kinds[kind].ok_disclaim_proc = proc;
         GC_obj_kinds[kind].ok_mark_unconditionally =

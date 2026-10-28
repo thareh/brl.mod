@@ -5,7 +5,7 @@
  * OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
  *
  * Permission is hereby granted to use or copy this program
- * for any purpose, provided the above notices are retained on all copies.
+ * for any purpose,  provided the above notices are retained on all copies.
  * Permission to modify the code and to distribute modified code is granted,
  * provided the above notices are retained, and a notice that the code was
  * modified is included with the above copyright notice.
@@ -21,23 +21,23 @@
 /* has no callee-save registers, then the generic code is    */
 /* safe, but this will not be noticed by this piece of       */
 /* code.)  This test appears to be far from perfect.         */
-
 #include <stdio.h>
 #include <setjmp.h>
 #include <string.h>
 
+#define NOT_GCBUILD
 #include "private/gc_priv.h"
 
 #ifdef OS2
-# define INCL_DOSERRORS
-# define INCL_DOSFILEMGR
-# define INCL_DOSMISC
-# include <os2.h>
+/* GETPAGESIZE() is set to getpagesize() by default, but that   */
+/* doesn't really exist, and the collector doesn't need it.     */
+#define INCL_DOSFILEMGR
+#define INCL_DOSMISC
+#define INCL_DOSERRORS
+#include <os2.h>
 
-  /* Similar to that in os_dep.c but use fprintf() to report a failure. */
-  /* GETPAGESIZE() macro is defined to os2_getpagesize().               */
-  static int os2_getpagesize(void)
-  {
+int getpagesize(void)
+{
     ULONG result[1];
 
     if (DosQuerySysInfo(QSV_PAGE_SIZE, QSV_PAGE_SIZE,
@@ -45,17 +45,16 @@
         fprintf(stderr, "DosQuerySysInfo failed\n");
         result[0] = 4096;
     }
-    return (int)result[0];
-  }
+    return((int)(result[0]));
+}
 
 #elif defined(MSWIN32) || defined(MSWINCE) || defined(CYGWIN32)
-  static int win32_getpagesize(void)
+  int getpagesize(void)
   {
     SYSTEM_INFO sysinfo;
     GetSystemInfo(&sysinfo);
     return sysinfo.dwPageSize;
   }
-# define GETPAGESIZE() win32_getpagesize()
 #endif
 
 struct a_s {
@@ -63,6 +62,7 @@ struct a_s {
   char * a_b;
 } a;
 
+GC_ATTR_NOINLINE
 word nested_sp(void)
 {
 # if GC_GNUC_PREREQ(4, 0)
@@ -90,7 +90,11 @@ int main(void)
     volatile word sp;
     unsigned ps = GETPAGESIZE();
     JMP_BUF b;
-    register int x = (int)strlen(a_str); /* 1, slightly disguised */
+#   if (!defined(__cplusplus) || __cplusplus < 201703L /* before c++17 */) \
+       && (!defined(__GNUC__) || defined(__OPTIMIZE__))
+      register
+#   endif
+      int x = (int)strlen(a_str); /* 1, slightly disguised */
     static volatile int y = 0;
 
     sp = (word)(&sp);
@@ -101,12 +105,12 @@ int main(void)
     if (nested_sp_fn() < sp) {
       printf("Stack appears to grow down, which is the default.\n");
       printf("A good guess for STACKBOTTOM on this machine is 0x%lx.\n",
-             ((unsigned long)sp + ps) & ~(ps-1));
+             ((unsigned long)sp + ps) & ~(unsigned long)(ps-1));
     } else {
       printf("Stack appears to grow up.\n");
-      printf("Define STACK_GROWS_UP in gc_private.h\n");
+      printf("Define STACK_GROWS_UP in gc_priv.h\n");
       printf("A good guess for STACKBOTTOM on this machine is 0x%lx.\n",
-             ((unsigned long)sp + ps) & ~(ps-1));
+             (unsigned long)sp & ~(unsigned long)(ps-1)); /* round down */
     }
     printf("Note that this may vary between machines of ostensibly\n");
     printf("the same architecture (e.g. Sun 3/50s and 3/80s).\n");
@@ -124,11 +128,11 @@ int main(void)
     (void)SETJMP(b);
     if (y == 1) {
       if (x == 2) {
-        printf("setjmp-based generic mark_regs code probably won't work.\n");
-        printf("But we rarely try that anymore.  If you have getcontect()\n");
-        printf("this probably doesn't matter.\n");
+        printf("Setjmp-based generic code to push registers probably\n"
+               "will not work. But we rarely try that anymore.\n"
+               "If you have getcontext(), this probably does not matter.\n");
       } else if (x == 1) {
-          printf("setjmp-based register marking code may work.\n");
+          printf("Setjmp-based register marking code may work.\n");
       } else {
           printf("Very strange setjmp implementation.\n");
       }
@@ -158,10 +162,10 @@ int main(void)
       printf("Parallel marking enabled.\n");
 #   endif
     (void)g(x);
-    return 0;
+    return(0);
 }
 
 int g(int x)
 {
-    return x;
+    return(x);
 }

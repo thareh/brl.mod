@@ -29,7 +29,7 @@ GC_ONLY_LOG_TO_FILE - Turns off redirection of GC stdout and stderr to the log
 GC_PRINT_VERBOSE_STATS - Turn on even more logging.  Not functional with
                          SMALL_CONFIG.
 
-GC_DUMP_REGULARLY - Generate a GC debugging dump GC_dump() on startup
+GC_DUMP_REGULARLY - Generate a GC debugging dump (by GC_dump_named) on startup
                     and during every collection.  Very verbose.  Useful
                     if you have a bug to report, but please include only the
                     last complete dump.
@@ -92,9 +92,7 @@ GC_PRINT_BACK_HEIGHT - Print max length of chain through unreachable objects
                      It increases GC space and time requirements appreciably.
                      This feature is still somewhat experimental, and requires
                      that the collector have been built with MAKE_BACK_GRAPH
-                     defined.  For details, see Boehm, "Bounding Space Usage
-                     of Conservative Garbage Collectors", POPL 2001
-                     (http://www.hpl.hp.com/techreports/2001/HPL-2001-251.html).
+                     defined.
 
 GC_RETRY_SIGNALS -   Try to compensate for lost
                      thread suspend and restart signals (Pthreads only).
@@ -147,10 +145,10 @@ GC_FREE_SPACE_DIVISOR - Set GC_free_space_divisor to the indicated value.
                       Setting it to larger values decreases space consumption
                       and increases GC frequency.
 
-GC_UNMAP_THRESHOLD - Set the desired threshold of memory blocks unmapping
-                   (the number of sequential garbage collections during those
-                   a candidate block for unmapping should be marked as free).
-                   The special value "0" completely disables unmapping.
+GC_UNMAP_THRESHOLD - Set the desired memory blocks unmapping threshold (the
+                   number of sequential garbage collections for which
+                   a candidate block for unmapping should remain free).  The
+                   special value "0" completely disables unmapping.
 
 GC_FORCE_UNMAP_ON_GCOLLECT - Turn "unmap as much as possible on explicit GC"
                 mode on (overrides the default value).  Has no effect on
@@ -163,8 +161,8 @@ GC_FIND_LEAK - Turns on GC_find_leak and thus leak detection.  Forces a
                otherwise occur after the last GC.
 
 GC_FINDLEAK_DELAY_FREE - Turns on deferred freeing of objects in the
-                       leak-finding mode (see the corresponding macro
-                       description for more information).
+                         find-leak mode (see the corresponding macro
+                         description for more information).
 
 GC_ABORT_ON_LEAK - Causes the application to be terminated once leaked or
                    smashed objects are found.

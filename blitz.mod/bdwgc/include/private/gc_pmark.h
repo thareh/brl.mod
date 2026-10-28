@@ -1,13 +1,13 @@
 /*
  * Copyright (c) 1991-1994 by Xerox Corporation.  All rights reserved.
  * Copyright (c) 2001 by Hewlett-Packard Company. All rights reserved.
- * Copyright (c) 2008-2022 Ivan Maidanski
+ * Copyright (c) 2008-2023 Ivan Maidanski
  *
  * THIS MATERIAL IS PROVIDED AS IS, WITH ABSOLUTELY NO WARRANTY EXPRESSED
  * OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
  *
  * Permission is hereby granted to use or copy this program
- * for any purpose, provided the above notices are retained on all copies.
+ * for any purpose,  provided the above notices are retained on all copies.
  * Permission to modify the code and to distribute modified code is granted,
  * provided the above notices are retained, and a notice that the code was
  * modified is included with the above copyright notice.
@@ -43,7 +43,7 @@
 # include "dbg_mlc.h"
 #endif
 
-#include "gc/gc_mark.h"
+#include "../gc_mark.h"
 #include "gc_priv.h"
 
 EXTERN_C_BEGIN
@@ -84,7 +84,7 @@ GC_EXTERN unsigned GC_n_mark_procs;
      *  The initiating threads holds the GC lock, and sets GC_help_wanted.
      *
      *  Other threads:
-     *     1) update helper_count (while holding mark_lock.)
+     *     1) update helper_count (while holding the mark lock).
      *     2) allocate a local mark stack
      *     repeatedly:
      *          3) Steal a global mark stack entry by atomically replacing
@@ -95,7 +95,7 @@ GC_EXTERN unsigned GC_n_mark_procs;
      *          6) If necessary, copy local stack to global one,
      *             holding mark lock.
      *    7) Stop when the global mark stack is empty.
-     *    8) decrement helper_count (holding mark_lock).
+     *    8) decrement helper_count (holding the mark lock).
      *
      * This is an experiment to see if we can do something along the lines
      * of the University of Tokyo SGC in a less intrusive, though probably
@@ -118,7 +118,7 @@ GC_INNER mse * GC_signal_mark_stack_overflow(mse *msp);
 
 /* Push the object obj with corresponding heap block header hhdr onto   */
 /* the mark stack.  Returns the updated mark_stack_top value.           */
-GC_INLINE mse * GC_push_obj(ptr_t obj, hdr * hhdr, mse * mark_stack_top,
+GC_INLINE mse * GC_push_obj(ptr_t obj, hdr * hhdr,  mse * mark_stack_top,
                             mse * mark_stack_limit)
 {
   word descr = hhdr -> hb_descr;
@@ -224,7 +224,8 @@ GC_INLINE mse * GC_push_obj(ptr_t obj, hdr * hhdr, mse * mark_stack_top,
 # define TRACE(source, cmd) \
         if (GC_trace_addr != 0 && (ptr_t)(source) == GC_trace_addr) cmd
 # define TRACE_TARGET(target, cmd) \
-        if (GC_trace_addr != 0 && (target) == *(ptr_t *)GC_trace_addr) cmd
+        if (GC_trace_addr != NULL && GC_is_heap_ptr(GC_trace_addr) \
+            && (target) == *(ptr_t *)GC_trace_addr) cmd
 #else
 # define TRACE(source, cmd)
 # define TRACE_TARGET(source, cmd)
@@ -234,7 +235,7 @@ GC_INLINE mse * GC_push_obj(ptr_t obj, hdr * hhdr, mse * mark_stack_top,
 # define LONG_MULT(hprod, lprod, x, y) \
     do { \
         __asm__ __volatile__("mull %2" : "=a"(lprod), "=d"(hprod) \
-                             : "g"(y), "0"(x)); \
+                             : "r"(y), "0"(x)); \
     } while (0)
 #else
 # if defined(__int64) && !defined(__GNUC__) && !defined(CPPCHECK)
@@ -246,7 +247,7 @@ GC_INLINE mse * GC_push_obj(ptr_t obj, hdr * hhdr, mse * mark_stack_top,
     do { \
         ULONG_MULT_T prod = (ULONG_MULT_T)(x) * (ULONG_MULT_T)(y); \
         GC_STATIC_ASSERT(sizeof(x) + sizeof(y) <= sizeof(prod)); \
-        hprod = prod >> 32; \
+        hprod = (unsigned32)(prod >> 32); \
         lprod = (unsigned32)prod; \
     } while (0)
 #endif /* !I386 */
@@ -369,7 +370,7 @@ GC_INLINE mse * GC_push_contents_hdr(ptr_t current, mse * mark_stack_top,
 
 /*
  * Push a single value onto mark stack. Mark from the object pointed to by p.
- * Invoke FIXUP_POINTER(p) before any further processing.
+ * Invoke FIXUP_POINTER() before any further processing.
  * P is considered valid even if it is an interior pointer.
  * Previously marked objects are not pushed.  Hence we make progress even
  * if the mark stack overflows.
@@ -379,14 +380,16 @@ GC_INLINE mse * GC_push_contents_hdr(ptr_t current, mse * mark_stack_top,
     /* Try both the raw version and the fixed up one.   */
 # define GC_PUSH_ONE_STACK(p, source) \
     do { \
+      word pp = (word)(p); \
+      \
       if ((word)(p) >= (word)GC_least_plausible_heap_addr \
           && (word)(p) < (word)GC_greatest_plausible_heap_addr) { \
          PUSH_ONE_CHECKED_STACK(p, source); \
       } \
-      FIXUP_POINTER(p); \
-      if ((word)(p) >= (word)GC_least_plausible_heap_addr \
-          && (word)(p) < (word)GC_greatest_plausible_heap_addr) { \
-         PUSH_ONE_CHECKED_STACK(p, source); \
+      FIXUP_POINTER(pp); \
+      if (pp >= (word)GC_least_plausible_heap_addr \
+          && pp < (word)GC_greatest_plausible_heap_addr) { \
+         PUSH_ONE_CHECKED_STACK(pp, source); \
       } \
     } while (0)
 #else /* !NEED_FIXUP_POINTER */
@@ -421,6 +424,25 @@ GC_INNER mse * GC_mark_from(mse * top, mse * bottom, mse *limit);
                                          GC_mark_stack + GC_mark_stack_size);
 
 #define GC_mark_stack_empty() ((word)GC_mark_stack_top < (word)GC_mark_stack)
+
+/*
+ * Mark from one finalizable object using the specified
+ * mark proc. May not mark the object pointed to by
+ * real_ptr. That is the job of the caller, if appropriate.
+ * Note that this is called with the mutator running, but
+ * with us holding the allocation lock.  This is safe only if the
+ * mutator needs the allocation lock to reveal hidden pointers.
+ * FIXME: Why do we need the GC_mark_state test below?
+ */
+#define GC_MARK_FO(real_ptr, mark_proc) \
+  do { \
+    (*(mark_proc))(real_ptr); \
+    while (!GC_mark_stack_empty()) MARK_FROM_MARK_STACK(); \
+    if (GC_mark_state != MS_NONE) { \
+        GC_set_mark_bit(real_ptr); \
+        while (!GC_mark_some((ptr_t)0)) { /* empty */ } \
+    } \
+  } while (0)
 
                                 /* Current state of marking, as follows.*/
 

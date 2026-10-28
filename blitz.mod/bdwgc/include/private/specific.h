@@ -5,7 +5,7 @@
  * OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
  *
  * Permission is hereby granted to use or copy this program
- * for any purpose, provided the above notices are retained on all copies.
+ * for any purpose,  provided the above notices are retained on all copies.
  * Permission to modify the code and to distribute modified code is granted,
  * provided the above notices are retained, and a notice that the code was
  * modified is included with the above copyright notice.
@@ -108,6 +108,13 @@ GC_INNER int GC_setspecific(tsd * key, void * value);
 #define GC_remove_specific(key) \
                         GC_remove_specific_after_fork(key, pthread_self())
 GC_INNER void GC_remove_specific_after_fork(tsd * key, pthread_t t);
+
+#ifdef CAN_HANDLE_FORK
+  /* Update thread-specific data for the survived thread of the child     */
+  /* process.  Should be called once after removing thread-specific data  */
+  /* for other threads.                                                   */
+  GC_INNER void GC_update_specific_after_fork(tsd *key);
+#endif
 
 /* An internal version of getspecific that assumes a cache miss.        */
 GC_INNER void * GC_slow_getspecific(tsd * key, word qtid,

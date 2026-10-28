@@ -1,7 +1,9 @@
 # Ignored files in bdwgc Git repo.
 
 # Binary files (in root dir, cord, tests):
+*.a
 *.dll
+*.dylib
 *.exe
 *.gcda
 *.gch
@@ -11,10 +13,10 @@
 *.lo
 *.o
 *.obj
+lib*.so
 
 *.gc.log
 .dirstamp
-/*.a
 /*_bench.log
 /*_bench.trs
 /*_test
@@ -23,6 +25,7 @@
 /.libs/
 /Makefile
 /add_gc_prefix
+/atomicops
 /atomicopstest
 /base_lib
 /bdw-gc.pc
@@ -45,6 +48,7 @@
 /disclaim_bench
 /disclaimtest
 /dont_ar_1
+/dont_ar_2
 /dont_ar_3
 /dont_ar_4
 /gc-*
@@ -58,7 +62,6 @@
 /if_not_there
 /initfromthreadtest
 /leaktest
-/lib*.so
 /libtool
 /middletest
 /realloctest
@@ -100,6 +103,7 @@ stamp-h1
 /config.guess
 /config.sub
 /configure
+/configure~
 /depcomp
 /include/config.h.in
 /install-sh

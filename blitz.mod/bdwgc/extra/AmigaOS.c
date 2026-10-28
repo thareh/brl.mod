@@ -72,7 +72,7 @@ ptr_t GC_get_main_stack_base(void)
      BPTR myseglist;
      ULONG *data;
 
-#     ifdef __GNUC__
+#    ifdef __GNUC__
         ULONG dataSegSize;
         GC_bool found_segment = FALSE;
         extern char __data_size[];
@@ -356,7 +356,7 @@ void *GC_amiga_rec_alloc(size_t size,void *(*AllocFunction)(size_t size2),const 
 void *GC_amiga_allocwrapper_any(size_t size,void *(*AllocFunction)(size_t size2)){
         void *ret;
 
-        GC_amiga_dontalloc=TRUE; /* Pretty tough thing to do, but its indeed necessary. */
+        GC_amiga_dontalloc=TRUE; /* Pretty tough thing to do, but it's indeed necessary. */
         latestsize=size;
 
         ret=(*AllocFunction)(size);

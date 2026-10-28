@@ -3,7 +3,6 @@
  * Copyright (c) 1996-1999 by Silicon Graphics.  All rights reserved.
  * Copyright (c) 2003-2011 Hewlett-Packard Development Company, L.P.
  *
- *
  * THIS MATERIAL IS PROVIDED AS IS, WITH ABSOLUTELY NO WARRANTY EXPRESSED
  * OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
  *
@@ -12,12 +11,16 @@
  * Permission to modify the code and to distribute modified code is granted,
  * provided the above notices are retained, and a notice that the code was
  * modified is included with the above copyright notice.
- *
  */
 
-/* Memory model documented at http://www-106.ibm.com/developerworks/    */
-/* eserver/articles/archguide.html and (clearer)                        */
-/* http://www-106.ibm.com/developerworks/eserver/articles/powerpc.html. */
+#if !defined(AO_ATOMIC_OPS_H) || defined(AO_ATOMIC_OPS_INCLUDED)
+# error This file should not be included directly.
+#endif
+
+/* Memory model is documented in "PowerPC Architecture Book"            */
+/* (https://web.archive.org/web/20180310135820/https://www.nxp.com/docs/en/user-guide/BOOK_EUM.pdf) */
+/* and, clearer, in "Book I. PowerPC User Instruction Set Architecture" */
+/* (https://download.boulder.ibm.com/ibmdl/pub/software/dw/library/es-ppcbook1.zip). */
 /* There appears to be no implicit ordering between any kind of         */
 /* independent memory references.                                       */
 

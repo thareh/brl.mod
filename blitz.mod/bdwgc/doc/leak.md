@@ -35,12 +35,12 @@ To use the collector as a leak detector, do the following steps:
 
 The second step can usually be accomplished with the
 `-DREDIRECT_MALLOC=GC_malloc` option when the collector is built, or by
-defining `malloc`, `calloc`, `realloc`, `free` (as well as `posix_memalign`,
-`reallocarray`, `strdup`, `strndup`, `wcsdup`, BSD `memalign`, GNU `valloc`,
-GNU `pvalloc`) to call the corresponding garbage collector function. But this,
-by itself, will not yield very informative diagnostics, since the collector
-does not keep track of the information about how objects were allocated. The
-error reports will include only object addresses.
+defining `malloc`, `calloc`, `realloc`, `free` (as well as `strdup`,
+`strndup`, `wcsdup`, `memalign`, `posix_memalign`) to call the corresponding
+garbage collector functions. But this, by itself, will not yield very
+informative diagnostics, since the collector does not keep track of the
+information about how objects were allocated. The error reports will include
+only object addresses.
 
 For more precise error reports, as much of the program as possible should use
 the all uppercase variants of these functions, after defining `GC_DEBUG`, and
@@ -70,14 +70,14 @@ distribution.
 Assume the collector has been built with `-DFIND_LEAK` or
 `GC_set_find_leak(1)` exists as the first statement in `main`.
 
-The program to be tested for leaks could look like `tests/leak.c` file
+The program to be tested for leaks could look like `tests/leak_test.c` file
 of the distribution.
 
 On a Linux/x86 system this produces on the stderr stream:
 
 
     Found 1 leaked objects:
-    0x806dff0 (tests/leak.c:19, sz=4, NORMAL)
+    0x806dff0 (tests/leak_test.c:19, sz=4, NORMAL)
 
 
 (On most unmentioned operating systems, the output is similar to this. If the
@@ -89,7 +89,7 @@ On Irix it reports:
 
 
     Found 1 leaked objects:
-    0x10040fe0 (tests/leak.c:19, sz=4, NORMAL)
+    0x10040fe0 (tests/leak_test.c:19, sz=4, NORMAL)
             Caller at allocation:
                     ##PC##= 0x10004910
 
@@ -98,7 +98,7 @@ and on Solaris the error report is:
 
 
     Found 1 leaked objects:
-    0xef621fc8 (tests/leak.c:19, sz=4, NORMAL)
+    0xef621fc8 (tests/leak_test.c:19, sz=4, NORMAL)
             Call chain at allocation:
                     args: 4 (0x4), 200656 (0x30FD0)
                     ##PC##= 0x14ADC
@@ -137,7 +137,7 @@ a program a.out under Linux/x86 as follows:
   be safe to omit the `--disable-threads` option on Linux, but the combination
   of thread support and `malloc` replacement is not yet rock solid):
 
-   - `configure --prefix=_foo_ --enable-gc-debug --enable-redirect-malloc --disable-threads`
+   - `./configure --prefix=_foo_ --enable-gc-debug --enable-redirect-malloc --disable-threads`
    - `make`
    - `make install`
 

@@ -3,7 +3,6 @@
  * Copyright (c) 1996-1999 by Silicon Graphics.  All rights reserved.
  * Copyright (c) 1999-2003 by Hewlett-Packard Company. All rights reserved.
  *
- *
  * THIS MATERIAL IS PROVIDED AS IS, WITH ABSOLUTELY NO WARRANTY EXPRESSED
  * OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
  *
@@ -12,8 +11,11 @@
  * Permission to modify the code and to distribute modified code is granted,
  * provided the above notices are retained, and a notice that the code was
  * modified is included with the above copyright notice.
- *
  */
+
+#if !defined(AO_ATOMIC_OPS_H) || defined(AO_ATOMIC_OPS_INCLUDED)
+# error This file should not be included directly.
+#endif
 
 #if (AO_GNUC_PREREQ(5, 4) || AO_CLANG_PREREQ(8, 0)) && defined(__s390x__) \
     && !defined(AO_DISABLE_GCC_ATOMICS)
@@ -24,9 +26,10 @@
 
 #else /* AO_DISABLE_GCC_ATOMICS */
 
-/* The relevant documentation appears to be at                  */
-/* http://publibz.boulder.ibm.com/epubs/pdf/dz9zr003.pdf        */
-/* around page 5-96.  Apparently:                               */
+/* The relevant documentation appears to be in                  */
+/* "z/Architecture Principles of Operation" book                */
+/* (https://publibfp.dhe.ibm.com/epubs/pdf/a227832c.pdf).       */
+/* Apparently:                                                  */
 /* - Memory references in general are atomic only for a single  */
 /*   byte.  But it appears that the most common load/store      */
 /*   instructions also guarantee atomicity for aligned          */

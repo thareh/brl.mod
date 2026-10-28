@@ -1,4 +1,4 @@
-# Makefile for Watcom C/C++ 10.5, 10.6, 11.0 on NT, OS/2 and DOS4GW.
+# Makefile for Watcom C/C++ 10.5, 10.6, 11.0 on NT, OS2 and DOS4GW.
 # May work with Watcom 10.0.
 
 # Uncomment one of the lines below for cross compilation.
@@ -24,10 +24,8 @@ CPU=5
 OPTIM=-oneatx -s
 #OPTIM=-ohneatx -s
 
-# Extra user-defined flags to pass both to C and C++ compilers.
-CFLAGS_EXTRA=
+DEFS=-DALL_INTERIOR_POINTERS -DENABLE_DISCLAIM -DGC_ATOMIC_UNCOLLECTABLE -DGC_GCJ_SUPPORT -DJAVA_FINALIZATION -DNO_EXECUTE_PERMISSION #-DSMALL_CONFIG
 
-DEFS=-DALL_INTERIOR_POINTERS -DENABLE_DISCLAIM -DGC_ATOMIC_UNCOLLECTABLE -DGC_GCJ_SUPPORT -DJAVA_FINALIZATION -DNO_EXECUTE_PERMISSION -DGC_REQUIRE_WCSDUP #-DSMALL_CONFIG
 
 #####
 
@@ -73,50 +71,48 @@ CORDFLAG=-br
 CC=wcc386
 CXX=wpp386
 
-CFLAGS=-$(CPU)$(CALLING) $(OPTIM) -iinclude -zp4 -zc $(SYSFLAG) $(DLLFLAG) $(DEFS) $(CFLAGS_EXTRA)
+CFLAGS=-$(CPU)$(CALLING) $(OPTIM) -iinclude -zp4 -zc $(SYSFLAG) $(DLLFLAG) $(DEFS)
 CXXFLAGS= $(CFLAGS) -xs
-TEST_CFLAGS=-$(CPU)$(CALLING) $(OPTIM) -iinclude -zp4 -zc $(SYSFLAG) $(TEST_DLLFLAG) $(DEFS) $(CFLAGS_EXTRA)
+TEST_CFLAGS=-$(CPU)$(CALLING) $(OPTIM) -iinclude -zp4 -zc $(SYSFLAG) $(TEST_DLLFLAG) $(DEFS)
 TEST_CXXFLAGS= $(TEST_CFLAGS) -xs
 
 COBJS= cordbscs.obj cordxtra.obj cordprnt.obj
 
 all: gc.lib gccpp.lib gctba.lib cord.lib
 
-check-deps: gctest.exe cpptest.exe cordtest.exe .SYMBOLIC
-
-check: check-deps .SYMBOLIC
+check: gctest.exe test_cpp.exe cordtest.exe .SYMBOLIC
         *gctest.exe
-        *cpptest.exe
+        *test_cpp.exe
         *cordtest.exe
 
 !ifdef ENABLE_STATIC
 
-OBJS= alloc.obj reclaim.obj allchblk.obj misc.obj &
-      mach_dep.obj os_dep.obj mark_rts.obj headers.obj mark.obj &
+OBJS= alloc.obj reclaim.obj allchblk.obj backgraph.obj checksums.obj &
+      misc.obj mach_dep.obj os_dep.obj mark_rts.obj headers.obj mark.obj &
       obj_map.obj blacklst.obj finalize.obj new_hblk.obj &
       dbg_mlc.obj malloc.obj dyn_load.obj &
       typd_mlc.obj ptr_chck.obj mallocx.obj fnlz_mlc.obj gcj_mlc.obj
 
 gc.lib: $(OBJS)
         @%create $*.lb1
-        @for %i in ($(OBJS)) do @%append $*.lb1 +'%i'
+        @for %i in ($(OBJS)) do @%append $*.lb1 +%i
         *wlib -b -c -n -p=512 $@ @$*.lb1
 
 cord.lib: $(COBJS)
         @%create $*.lb1
-        @for %i in ($(COBJS)) do @%append $*.lb1 +'%i'
+        @for %i in ($(COBJS)) do @%append $*.lb1 +%i
         *wlib -b -c -n -p=512 $@ @$*.lb1
 
 gccpp.lib: gc_badalc.obj gc_cpp.obj
         @%create $*.lb1
-        @%append $*.lb1 +'gc_badalc.obj'
-        @%append $*.lb1 +'gc_cpp.obj'
+        @%append $*.lb1 +gc_badalc.obj
+        @%append $*.lb1 +gc_cpp.obj
         *wlib -b -c -n -p=512 $@ @$*.lb1
 
 # The same as gccpp.lib but contains only gc_badalc.obj.
 gctba.lib: gc_badalc.obj
         @%create $*.lb1
-        @%append $*.lb1 +'gc_badalc.obj'
+        @%append $*.lb1 +gc_badalc.obj
         *wlib -b -c -n -p=512 $@ @$*.lb1
 
 !else
@@ -138,7 +134,7 @@ gc.dll: gc.obj .AUTODEPEND
 !endif
         @%append $*.lnk op case
         @%append $*.lnk name $*
-        @%append $*.lnk file 'gc.obj'
+        @%append $*.lnk file gc.obj
         *wlink @$*.lnk
 
 cord.lib: cord.dll
@@ -155,7 +151,7 @@ cord.dll: $(COBJS) gc.lib .AUTODEPEND
 !endif
         @%append $*.lnk op case
         @%append $*.lnk name $*
-        @for %i in ($(COBJS)) do @%append $*.lnk file '%i'
+        @for %i in ($(COBJS)) do @%append $*.lnk file %i
         @%append $*.lnk library gc.lib
         *wlink @$*.lnk
 
@@ -173,8 +169,8 @@ gccpp.dll: gc_badalc.obj gc_cpp.obj gc.lib .AUTODEPEND
 !endif
         @%append $*.lnk op case
         @%append $*.lnk name $*
-        @%append $*.lnk file 'gc_badalc.obj'
-        @%append $*.lnk file 'gc_cpp.obj'
+        @%append $*.lnk file gc_badalc.obj
+        @%append $*.lnk file gc_cpp.obj
         @%append $*.lnk library gc.lib
         @%append $*.lnk library wr7$(CALLING)dll.lib
         *wlink @$*.lnk
@@ -193,14 +189,14 @@ gctba.dll: gc_badalc.obj gc.lib .AUTODEPEND
 !endif
         @%append $*.lnk op case
         @%append $*.lnk name $*
-        @%append $*.lnk file 'gc_badalc.obj'
+        @%append $*.lnk file gc_badalc.obj
         @%append $*.lnk library gc.lib
         @%append $*.lnk library wr7$(CALLING)dll.lib
         *wlink @$*.lnk
 
 !endif
 
-gctest.exe: gctest.obj gc.lib
+gctest.exe: test.obj gc.lib
         %create $*.lnk
 !ifdef DOS4GW
         @%append $*.lnk sys dos4g
@@ -212,7 +208,7 @@ gctest.exe: gctest.obj gc.lib
         @%append $*.lnk op case
         @%append $*.lnk op stack=256K
         @%append $*.lnk name $*
-        @%append $*.lnk file gctest.obj
+        @%append $*.lnk file test.obj
         @%append $*.lnk library gc.lib
         *wlink @$*.lnk
 
@@ -233,7 +229,7 @@ cordtest.exe: cordtest.obj gc.lib cord.lib
         @%append $*.lnk library cord.lib
         *wlink @$*.lnk
 
-cpptest.exe: cpptest.obj gc.lib gccpp.lib
+test_cpp.exe: test_cpp.obj gc.lib gccpp.lib
         %create $*.lnk
 !ifdef DOS4GW
         @%append $*.lnk sys dos4g
@@ -245,7 +241,7 @@ cpptest.exe: cpptest.obj gc.lib gccpp.lib
         @%append $*.lnk op case
         @%append $*.lnk op stack=256K
         @%append $*.lnk name $*
-        @%append $*.lnk file cpptest.obj
+        @%append $*.lnk file test_cpp.obj
         @%append $*.lnk library gc.lib
         @%append $*.lnk library gccpp.lib
         *wlink @$*.lnk
@@ -262,12 +258,12 @@ gc_badalc.obj: gc_badalc.cc .AUTODEPEND
 gc_cpp.obj: gc_cpp.cc .AUTODEPEND
         $(CXX) $(TEST_CXXFLAGS) $*.cc
 
-gctest.obj: tests\gctest.c .AUTODEPEND
-        $(CC) $(TEST_CFLAGS) /wcd=13 /wcd=201 /wcd=367 /wcd=368 tests\gctest.c
+test.obj: tests\test.c .AUTODEPEND
+        $(CC) $(TEST_CFLAGS) /wcd=201 tests\test.c
 cordtest.obj: cord\tests\cordtest.c .AUTODEPEND
         $(CC) $(TEST_CFLAGS) $(CORDFLAG) cord\tests\cordtest.c
-cpptest.obj: tests\cpp.cc .AUTODEPEND
-        $(CXX) $(TEST_CXXFLAGS) -fo=cpptest.obj tests\cpp.cc
+test_cpp.obj: tests\test_cpp.cc .AUTODEPEND
+        $(CXX) $(TEST_CXXFLAGS) tests\test_cpp.cc
 
 .c.obj: .AUTODEPEND
         $(CC) $(CFLAGS) $*.c

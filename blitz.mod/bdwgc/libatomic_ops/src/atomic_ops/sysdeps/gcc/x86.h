@@ -16,6 +16,10 @@
  * Some of the machine specific code was borrowed from our GC distribution.
  */
 
+#if !defined(AO_ATOMIC_OPS_H) || defined(AO_ATOMIC_OPS_INCLUDED)
+# error This file should not be included directly.
+#endif
+
 #if (AO_GNUC_PREREQ(4, 8) || AO_CLANG_PREREQ(3, 4)) \
     && !defined(__INTEL_COMPILER) /* TODO: test and enable icc */ \
     && !defined(AO_DISABLE_GCC_ATOMICS)
@@ -68,14 +72,14 @@
 #     endif
 #   endif /* __x86_64__ */
 
-# elif AO_GNUC_PREREQ(7, 0) && !defined(AO_PREFER_BUILTIN_ATOMICS) \
-       && !defined(AO_THREAD_SANITIZER) && !defined(__MINGW32__)
-    /* gcc-7.x/x64 (gcc-7.2, at least) requires -latomic flag in case   */
+# elif defined(__x86_64__) && !defined(AO_PREFER_BUILTIN_ATOMICS) \
+       && !defined(AO_THREAD_SANITIZER)
+    /* gcc/x64 (as of gcc-12.2) requires -latomic flag in case          */
     /* of double-word atomic operations use (but not in case of TSan).  */
-    /* TODO: Revise it for the future gcc-7 releases. */
+    /* TODO: Revise it for the future gcc releases. */
 #   define AO_SKIPATOMIC_double_compare_and_swap_ANY
 #   define AO_SKIPATOMIC_DOUBLE_LOAD_STORE_ANY
-# endif /* __GNUC__ && !__clang__ */
+# endif /* __x86_64__ && !__clang__ */
 
 # ifdef AO_SKIPATOMIC_DOUBLE_LOAD_STORE_ANY
 #   define AO_SKIPATOMIC_double_load

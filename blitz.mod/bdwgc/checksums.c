@@ -5,7 +5,7 @@
  * OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
  *
  * Permission is hereby granted to use or copy this program
- * for any purpose, provided the above notices are retained on all copies.
+ * for any purpose,  provided the above notices are retained on all copies.
  * Permission to modify the code and to distribute modified code is granted,
  * provided the above notices are retained, and a notice that the code was
  * modified is included with the above copyright notice.
@@ -36,10 +36,10 @@ STATIC word GC_faulted[NSUMS] = { 0 };
 
 STATIC size_t GC_n_faulted = 0;
 
-#if defined(MPROTECT_VDB) && !defined(DARWIN)
+#ifdef MPROTECT_VDB
   void GC_record_fault(struct hblk * h)
   {
-    word page = (word)h & ~(GC_page_size - 1);
+    word page = (word)h & ~(word)(GC_page_size-1);
 
     GC_ASSERT(GC_page_size != 0);
     if (GC_n_faulted >= NSUMS) ABORT("write fault log overflowed");
@@ -50,7 +50,7 @@ STATIC size_t GC_n_faulted = 0;
 STATIC GC_bool GC_was_faulted(struct hblk *h)
 {
     size_t i;
-    word page = (word)h & ~(GC_page_size - 1);
+    word page = (word)h & ~(word)(GC_page_size-1);
 
     for (i = 0; i < GC_n_faulted; ++i) {
         if (GC_faulted[i] == page) return TRUE;
@@ -67,7 +67,7 @@ STATIC word GC_checksum(struct hblk *h)
     while ((word)p < (word)lim) {
         result += *p++;
     }
-    return result | 0x80000000; /* does not look like pointer */
+    return(result | 0x80000000 /* doesn't look like pointer */);
 }
 
 int GC_n_dirty_errors = 0;
@@ -114,12 +114,11 @@ STATIC void GC_update_check_page(struct hblk *h, int index)
 
 word GC_bytes_in_used_blocks = 0;
 
-STATIC void GC_CALLBACK GC_add_block(struct hblk *h, GC_word dummy)
+STATIC void GC_add_block(struct hblk *h, word dummy GC_ATTR_UNUSED)
 {
    hdr * hhdr = HDR(h);
 
-   UNUSED_ARG(dummy);
-   GC_bytes_in_used_blocks += (hhdr->hb_sz + HBLKSIZE-1) & ~(HBLKSIZE-1);
+   GC_bytes_in_used_blocks += (hhdr->hb_sz + HBLKSIZE-1) & ~(word)(HBLKSIZE-1);
 }
 
 STATIC void GC_check_blocks(void)
@@ -127,7 +126,7 @@ STATIC void GC_check_blocks(void)
     word bytes_in_free_blocks = GC_large_free_bytes;
 
     GC_bytes_in_used_blocks = 0;
-    GC_apply_to_all_blocks(GC_add_block, 0);
+    GC_apply_to_all_blocks(GC_add_block, (word)0);
     GC_COND_LOG_PRINTF("GC_bytes_in_used_blocks= %lu,"
                        " bytes_in_free_blocks= %lu, heapsize= %lu\n",
                        (unsigned long)GC_bytes_in_used_blocks,

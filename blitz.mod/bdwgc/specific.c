@@ -5,7 +5,7 @@
  * OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
  *
  * Permission is hereby granted to use or copy this program
- * for any purpose, provided the above notices are retained on all copies.
+ * for any purpose,  provided the above notices are retained on all copies.
  * Permission to modify the code and to distribute modified code is granted,
  * provided the above notices are retained, and a notice that the code was
  * modified is included with the above copyright notice.
@@ -31,7 +31,7 @@ GC_INNER int GC_key_create_inner(tsd ** key_ptr)
 
     GC_ASSERT(I_HOLD_LOCK());
     /* A quick alignment check, since we need atomic stores */
-    GC_ASSERT((word)(&invalid_tse.next) % sizeof(tse *) == 0);
+    GC_ASSERT((word)(&invalid_tse.next) % ALIGNMENT == 0);
     result = (tsd *)MALLOC_CLEAR(sizeof(tsd));
     if (NULL == result) return ENOMEM;
     ret = pthread_mutex_init(&result->lock, NULL);
@@ -59,7 +59,7 @@ GC_INNER int GC_setspecific(tsd * key, void * value)
     GC_dont_gc++; /* disable GC */
     entry = (volatile tse *)MALLOC_CLEAR(sizeof(tse));
     GC_dont_gc--;
-    if (EXPECT(NULL == entry, FALSE)) return ENOMEM;
+    if (0 == entry) return ENOMEM;
 
     pthread_mutex_lock(&(key -> lock));
     /* Could easily check for an existing entry here.   */
@@ -133,6 +133,33 @@ GC_INNER void GC_remove_specific_after_fork(tsd * key, pthread_t t)
       ABORT("pthread_mutex_unlock failed (remove_specific after fork)");
 }
 
+#ifdef CAN_HANDLE_FORK
+  GC_INNER void
+  GC_update_specific_after_fork(tsd *key)
+  {
+    unsigned hash_val = HASH(GC_parent_pthread_self);
+    tse *entry;
+
+    GC_ASSERT(I_HOLD_LOCK());
+#   ifdef LINT2
+      pthread_mutex_lock(&key->lock);
+#   endif
+    entry = key->hash[hash_val].p;
+    if (EXPECT(entry != NULL, TRUE)) {
+      GC_ASSERT(THREAD_EQUAL(entry->thread, GC_parent_pthread_self));
+      GC_ASSERT(NULL == entry->next);
+      /* Remove the entry from the table. */
+      key->hash[hash_val].p = NULL;
+      entry->thread = pthread_self();
+      /* Then put the entry back to the table (based on new hash value). */
+      key->hash[HASH(entry->thread)].p = entry;
+    }
+#   ifdef LINT2
+      (void)pthread_mutex_unlock(&key->lock);
+#   endif
+  }
+#endif
+
 /* Note that even the slow path doesn't lock.   */
 GC_INNER void * GC_slow_getspecific(tsd * key, word qtid,
                                     tse * volatile * cache_ptr)
@@ -146,14 +173,12 @@ GC_INNER void * GC_slow_getspecific(tsd * key, word qtid,
     }
     if (entry == NULL) return NULL;
     /* Set cache_entry. */
-    entry -> qtid = (AO_t)qtid;
+    AO_store(&(entry -> qtid), qtid);
         /* It's safe to do this asynchronously.  Either value   */
         /* is safe, though may produce spurious misses.         */
         /* We're replacing one qtid with another one for the    */
         /* same thread.                                         */
-    *cache_ptr = entry;
-        /* Again this is safe since pointer assignments are     */
-        /* presumed atomic, and either pointer is valid.        */
+    AO_store((volatile AO_t *)cache_ptr, (AO_t)entry);
     return TS_REVEAL_PTR(entry -> value);
 }
 

@@ -1,5 +1,6 @@
 /* Conditionally execute a command based on machine and OS from gcconfig.h */
 
+# define NOT_GCBUILD
 # include "private/gc_priv.h"
 # include <stdio.h>
 # include <string.h>
@@ -16,9 +17,9 @@
 int main(int argc, char **argv)
 {
     if (argc < 4) goto Usage;
-    if (strcmp(MACH_TYPE, argv[1]) != 0) return 0;
+    if (strcmp(MACH_TYPE, argv[1]) != 0) return(0);
     if (strlen(OS_TYPE) > 0 && strlen(argv[2]) > 0
-        && strcmp(OS_TYPE, argv[2]) != 0) return 0;
+        && strcmp(OS_TYPE, argv[2]) != 0) return(0);
     fprintf(stderr, "^^^^Starting command^^^^\n");
     fflush(stdout);
     execvp(TRUSTED_STRING(argv[3]), (EXECV_ARGV_T)(argv + 3));
@@ -28,5 +29,5 @@ Usage:
     fprintf(stderr, "Usage: %s mach_type os_type command\n", argv[0]);
     fprintf(stderr, "Currently mach_type = %s, os_type = %s\n",
             MACH_TYPE, OS_TYPE);
-    return 1;
+    return(1);
 }

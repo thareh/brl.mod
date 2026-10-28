@@ -63,13 +63,13 @@ and, thus, the number of short-duration lock acquisitions is greatly reduced.
 
 ## The Parallel Marking Algorithm
 
-We use an algorithm similar to
-[that developed by Endo, Taura, and Yonezawa](http://www.yl.is.s.u-tokyo.ac.jp/gc/)
+We use an algorithm similar to that developed by Endo, Taura, and Yonezawa
+([An Effective Garbage Collection Strategy for Parallel Programming Languages on Large Scale Distributed-Memory Machines](https://dl.acm.org/doi/pdf/10.1145/263767.263801))
 at the University of Tokyo. However, the data structures and implementation
 are different, and represent a smaller change to the original collector
 source, probably at the expense of extreme scalability. Some of the
 refinements they suggest, e.g. splitting large objects, were also incorporated
-into out approach.
+into our approach.
 
 The global mark stack is transformed into a global work queue. Unlike the
 usual case, it never shrinks during a mark phase. The mark threads remove

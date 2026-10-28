@@ -1,13 +1,13 @@
 /*
  * Copyright (c) 1991-1994 by Xerox Corporation.  All rights reserved.
  * Copyright (c) 1997 by Silicon Graphics.  All rights reserved.
- * Copyright (c) 2009-2022 Ivan Maidanski
+ * Copyright (c) 2009-2024 Ivan Maidanski
  *
  * THIS MATERIAL IS PROVIDED AS IS, WITH ABSOLUTELY NO WARRANTY EXPRESSED
  * OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
  *
  * Permission is hereby granted to use or copy this program
- * for any purpose, provided the above notices are retained on all copies.
+ * for any purpose,  provided the above notices are retained on all copies.
  * Permission to modify the code and to distribute modified code is granted,
  * provided the above notices are retained, and a notice that the code was
  * modified is included with the above copyright notice.
@@ -45,6 +45,11 @@
 # define GC_MUST_RESTORE_REDEFINED_DLOPEN
 #endif /* !GC_NO_DLOPEN */
 
+#if defined(SOLARISDL) && defined(THREADS) && !defined(PCR) \
+    && !defined(GC_SOLARIS_THREADS) && !defined(CPPCHECK)
+#  error Fix mutual exclusion with dlopen
+#endif
+
 /* A user-supplied routine (custom filter) that might be called to      */
 /* determine whether a DSO really needs to be scanned by the GC.        */
 /* 0 means no filter installed.  May be unused on some platforms.       */
@@ -63,9 +68,16 @@ STATIC GC_has_static_roots_func GC_has_static_roots = 0;
     && !(defined(NETBSD) && defined(__ELF__)) \
     && !(defined(OPENBSD) && (defined(__ELF__) || defined(M68K))) \
     && !defined(HAIKU) && !defined(HURD) && !defined(NACL) \
-    && !defined(CPPCHECK)
+    && !defined(SERENITY) && !defined(CPPCHECK)
 # error We only know how to find data segments of dynamic libraries for above.
 # error Additional SVR4 variants might not be too hard to add.
+#endif
+
+#include <stdio.h>
+
+#if defined(DARWIN) && !defined(USE_DYLD_TO_BIND) \
+    && !defined(NO_DYLD_BIND_FULLY_IMAGE)
+# include <dlfcn.h>
 #endif
 
 #ifdef SOLARISDL
@@ -89,6 +101,7 @@ STATIC GC_has_static_roots_func GC_has_static_roots = 0;
 #endif /* OPENBSD */
 
 #if defined(SCO_ELF) || defined(DGUX) || defined(HURD) || defined(NACL) \
+    || defined(SERENITY) \
     || (defined(__ELF__) && (defined(LINUX) || defined(FREEBSD) \
                              || defined(NETBSD) || defined(OPENBSD)))
 # include <stddef.h>
@@ -110,7 +123,9 @@ STATIC GC_has_static_roots_func GC_has_static_roots = 0;
 #     undef EM_ALPHA
 #   endif
 #   include <link.h>
-#   if !defined(GC_DONT_DEFINE_LINK_MAP) && !(__ANDROID_API__ >= 21)
+# endif /* HOST_ANDROID */
+# if (defined(HOST_ANDROID) && !defined(GC_DONT_DEFINE_LINK_MAP) \
+      && !(__ANDROID_API__ >= 21)) || defined(SERENITY)
       /* link_map and r_debug are defined in link.h of NDK r10+.        */
       /* bionic/linker/linker.h defines them too but the header         */
       /* itself is a C++ one starting from Android 4.3.                 */
@@ -128,8 +143,8 @@ STATIC GC_has_static_roots_func GC_has_static_roots = 0;
         int32_t r_state;
         uintptr_t r_ldbase;
       };
-#   endif
-# else
+# endif /* __ANDROID_API__ >= 21 || SERENITY */
+# ifndef HOST_ANDROID
     EXTERN_C_BEGIN      /* Workaround missing extern "C" around _DYNAMIC */
                         /* symbol in link.h of some Linux hosts.         */
 #   include <link.h>
@@ -139,29 +154,29 @@ STATIC GC_has_static_roots_func GC_has_static_roots = 0;
 
 /* Newer versions of GNU/Linux define this macro.  We
  * define it similarly for any ELF systems that don't.  */
-# ifndef ElfW
-#   if defined(FREEBSD)
-#     if __ELF_WORD_SIZE == 32
-#       define ElfW(type) Elf32_##type
-#     else
-#       define ElfW(type) Elf64_##type
-#     endif
-#   elif defined(NETBSD) || defined(OPENBSD)
-#     if ELFSIZE == 32
-#       define ElfW(type) Elf32_##type
-#     elif ELFSIZE == 64
-#       define ElfW(type) Elf64_##type
-#     else
-#       error Missing ELFSIZE define
-#     endif
-#   else
-#     if !defined(ELF_CLASS) || ELF_CLASS == ELFCLASS32
-#       define ElfW(type) Elf32_##type
-#     else
-#       define ElfW(type) Elf64_##type
-#     endif
-#   endif
-# endif
+#  ifndef ElfW
+#    if defined(FREEBSD)
+#      if __ELF_WORD_SIZE == 32
+#        define ElfW(type) Elf32_##type
+#      else
+#        define ElfW(type) Elf64_##type
+#      endif
+#    elif defined(NETBSD) || defined(OPENBSD)
+#      if ELFSIZE == 32
+#        define ElfW(type) Elf32_##type
+#      elif ELFSIZE == 64
+#        define ElfW(type) Elf64_##type
+#      else
+#        error Missing ELFSIZE define
+#      endif
+#    else
+#      if !defined(ELF_CLASS) || ELF_CLASS == ELFCLASS32
+#        define ElfW(type) Elf32_##type
+#      else
+#        define ElfW(type) Elf64_##type
+#      endif
+#    endif
+#  endif
 
 #if defined(SOLARISDL) && !defined(USE_PROC_FOR_LIBRARIES)
 
@@ -192,7 +207,7 @@ STATIC GC_has_static_roots_func GC_has_static_roots = 0;
 
     if (0 == COVERT_DATAFLOW(dynStructureAddr)) {
         /* _DYNAMIC symbol not resolved. */
-        return NULL;
+        return(0);
     }
     if (cachedResult == 0) {
         int tag;
@@ -211,28 +226,11 @@ STATIC GC_has_static_roots_func GC_has_static_roots = 0;
     return cachedResult;
   }
 
-#endif /* SOLARISDL ... */
+  GC_INNER void GC_register_dynamic_libraries(void)
+  {
+    struct link_map *lm;
 
-/* BTL: added to fix circular dlopen definition if GC_SOLARIS_THREADS defined */
-# ifdef GC_MUST_RESTORE_REDEFINED_DLOPEN
-#   define dlopen GC_dlopen
-# endif
-
-# if defined(SOLARISDL)
-
-/* Add dynamic library data sections to the root set.           */
-# if !defined(PCR) && !defined(GC_SOLARIS_THREADS) && defined(THREADS) \
-     && !defined(CPPCHECK)
-#   error Fix mutual exclusion with dlopen
-# endif
-
-# ifndef USE_PROC_FOR_LIBRARIES
-GC_INNER void GC_register_dynamic_libraries(void)
-{
-  struct link_map *lm;
-
-  GC_ASSERT(I_HOLD_LOCK());
-  for (lm = GC_FirstDLOpenedLinkMap(); lm != 0; lm = lm->l_next) {
+    for (lm = GC_FirstDLOpenedLinkMap(); lm != 0; lm = lm->l_next) {
         ElfW(Ehdr) * e;
         ElfW(Phdr) * p;
         unsigned long offset;
@@ -256,12 +254,12 @@ GC_INNER void GC_register_dynamic_libraries(void)
           }
         }
     }
-}
+  }
 
-# endif /* !USE_PROC_FOR_LIBRARIES */
-# endif /* SOLARISDL */
+#endif /* SOLARISDL && !USE_PROC_FOR_LIBRARIES */
 
 #if defined(SCO_ELF) || defined(DGUX) || defined(HURD) || defined(NACL) \
+    || defined(SERENITY) \
     || (defined(__ELF__) && (defined(LINUX) || defined(FREEBSD) \
                              || defined(NETBSD) || defined(OPENBSD)))
 
@@ -308,7 +306,7 @@ static void sort_heap_sects(struct HeapSect *base, size_t number_of_elements)
 
 STATIC void GC_register_map_entries(const char *maps)
 {
-    const char *prot, *path;
+    const char *prot;
     ptr_t start, end;
     unsigned int maj_dev;
     ptr_t least_ha, greatest_ha;
@@ -321,7 +319,7 @@ STATIC void GC_register_map_entries(const char *maps)
                   + GC_our_memory[GC_n_memory-1].hs_bytes;
 
     for (;;) {
-        maps = GC_parse_map_entry(maps, &start, &end, &prot, &maj_dev, &path);
+        maps = GC_parse_map_entry(maps, &start, &end, &prot, &maj_dev, 0);
         if (NULL == maps) break;
 
         if (prot[1] == 'w') {
@@ -333,15 +331,6 @@ STATIC void GC_register_map_entries(const char *maps)
                 /* Stack mapping; discard       */
                 continue;
             }
-#           if defined(E2K) && defined(__ptr64__)
-              /* TODO: avoid hard-coded addresses */
-              if ((word)start == 0xc2fffffff000UL
-                  && (word)end == 0xc30000000000UL && path[0] == '\n')
-                continue; /* discard some special mapping */
-#           endif
-            if (path[0] == '[' && strncmp(path+1, "heap]", 5) != 0)
-              continue; /* discard if a pseudo-path unless "[heap]" */
-
 #           ifdef THREADS
               /* This may fail, since a thread may already be           */
               /* unregistered, but its thread stack may still be there. */
@@ -424,8 +413,9 @@ GC_INNER GC_bool GC_register_main_static_data(void)
 /* for glibc 2.2.4+.  Unfortunately, it doesn't work for older  */
 /* versions.  Thanks to Jakub Jelinek for most of the code.     */
 
-#if GC_GLIBC_PREREQ(2, 3) || defined(HOST_ANDROID)
-                        /* Are others OK here, too? */
+#if __GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2) \
+    || (__GLIBC__ == 2 && __GLIBC_MINOR__ == 2 && defined(DT_CONFIG)) \
+    || defined(HOST_ANDROID) /* Are others OK here, too? */
 # ifndef HAVE_DL_ITERATE_PHDR
 #   define HAVE_DL_ITERATE_PHDR
 # endif
@@ -510,7 +500,7 @@ STATIC int GC_register_dynlib_callback(struct dl_phdr_info * info,
           /* probably, we should remove the corresponding assertion */
           /* check in GC_add_roots_inner along with this code line. */
           /* start pointer value may require aligning.              */
-          start = (ptr_t)((word)start & ~(word)(sizeof(word) - 1));
+          start = (ptr_t)((word)start & ~(word)(ALIGNMENT - 1));
 #       endif
         if (n_load_segs >= MAX_LOAD_SEGS) {
           if (!load_segs_overflow) {
@@ -552,7 +542,7 @@ STATIC int GC_register_dynlib_callback(struct dl_phdr_info * info,
             } else {
               GC_ASSERT((word)end <=
                             (((word)load_segs[j].end + GC_page_size - 1) &
-                             ~(GC_page_size - 1)));
+                             ~(word)(GC_page_size - 1)));
               /* Remove from the existing load segment */
               load_segs[j].end2 = load_segs[j].end;
               load_segs[j].end = start;
@@ -694,7 +684,7 @@ STATIC GC_bool GC_register_dynamic_libraries_dl_iterate_phdr(void)
 #     define PF_W       2
 #   endif
 # elif !defined(HOST_ANDROID)
-#   include <elf.h>
+#  include <elf.h>
 # endif
 
 # ifndef HOST_ANDROID
@@ -717,9 +707,9 @@ GC_FirstDLOpenedLinkMap(void)
 
     if (0 == COVERT_DATAFLOW(_DYNAMIC)) {
         /* _DYNAMIC symbol not resolved. */
-        return NULL;
+        return(0);
     }
-    if (NULL == cachedResult) {
+    if( cachedResult == 0 ) {
 #     if defined(NETBSD) && defined(RTLD_DI_LINKMAP)
 #       if defined(CPPCHECK)
 #         define GC_RTLD_DI_LINKMAP 2
@@ -761,7 +751,6 @@ GC_INNER void GC_register_dynamic_libraries(void)
 {
   struct link_map *lm;
 
-  GC_ASSERT(I_HOLD_LOCK());
 # ifdef HAVE_DL_ITERATE_PHDR
     if (GC_register_dynamic_libraries_dl_iterate_phdr()) {
         return;
@@ -820,10 +809,9 @@ GC_INNER void GC_register_dynamic_libraries(void)
 GC_INNER void GC_register_dynamic_libraries(void)
 {
     static int fd = -1;
+    char buf[30];
     static prmap_t * addr_map = 0;
     static int current_sz = 0;  /* Number of records currently in addr_map */
-
-    char buf[32];
     int needed_sz = 0;          /* Required size of addr_map            */
     int i;
     long flags;
@@ -833,10 +821,11 @@ GC_INNER void GC_register_dynamic_libraries(void)
     ptr_t heap_end = heap_start;
 
 #   ifdef SOLARISDL
+#     define MA_FETCHOP 0
+#     define MA_NOTCACHED 0
 #     define MA_PHYS 0
 #   endif /* SOLARISDL */
 
-    GC_ASSERT(I_HOLD_LOCK());
     if (fd < 0) {
       (void)snprintf(buf, sizeof(buf), "/proc/%ld", (long)getpid());
       buf[sizeof(buf) - 1] = '\0';
@@ -935,6 +924,8 @@ GC_INNER void GC_register_dynamic_libraries(void)
 
 # if defined(MSWIN32) || defined(MSWINCE) || defined(CYGWIN32)
 
+# include <stdlib.h>
+
   /* We traverse the entire address space and register all segments     */
   /* that could possibly have been written to.                          */
   STATIC void GC_cond_add_roots(char *base, char * limit)
@@ -986,13 +977,12 @@ GC_INNER void GC_register_dynamic_libraries(void)
 # ifdef DEBUG_VIRTUALQUERY
   void GC_dump_meminfo(MEMORY_BASIC_INFORMATION *buf)
   {
-    GC_printf("BaseAddress= 0x%lx, AllocationBase= 0x%lx,"
-              " RegionSize= 0x%lx(%lu)\n",
-              buf -> BaseAddress, buf -> AllocationBase,
-              buf -> RegionSize, buf -> RegionSize);
-    GC_printf("\tAllocationProtect= 0x%lx, State= 0x%lx, Protect= 0x%lx, "
-              "Type= 0x%lx\n", buf -> AllocationProtect, buf -> State,
-              buf -> Protect, buf -> Type);
+    GC_printf(
+      "BaseAddress= %p, AllocationBase= %p, RegionSize= 0x%lx\n"
+      "\tAllocationProtect= 0x%x, State= 0x%x, Protect= 0x%x, Type= 0x%x\n",
+      buf -> BaseAddress, buf -> AllocationBase,
+      (unsigned long)(buf -> RegionSize),
+      buf -> AllocationProtect, buf -> State, buf -> Protect, buf -> Type);
   }
 # endif /* DEBUG_VIRTUALQUERY */
 
@@ -1012,9 +1002,8 @@ GC_INNER void GC_register_dynamic_libraries(void)
     DWORD protect;
     LPVOID p;
     char * base;
-    char * limit, * new_limit;
+    char * limit;
 
-    GC_ASSERT(I_HOLD_LOCK());
 #   ifdef MSWIN32
       if (GC_no_win32_dlls) return;
 #   endif
@@ -1025,17 +1014,19 @@ GC_INNER void GC_register_dynamic_libraries(void)
 
 #       ifdef MSWINCE
           if (result == 0) {
-            /* Page is free; advance to the next possible allocation base */
-            new_limit = (char *)
-                (((DWORD) p + GC_sysinfo.dwAllocationGranularity)
-                 & ~(GC_sysinfo.dwAllocationGranularity-1));
+            if ((word)p > GC_WORD_MAX - GC_sysinfo.dwAllocationGranularity)
+              break; /* overflow */
+            /* Page is free; advance to the next possible allocation base. */
+            p = (LPVOID)(((DWORD)p + GC_sysinfo.dwAllocationGranularity)
+                         & ~(GC_sysinfo.dwAllocationGranularity-1));
           } else
 #       endif
         /* else */ {
             if (result != sizeof(buf)) {
                 ABORT("Weird VirtualQuery result");
             }
-            new_limit = (char *)p + buf.RegionSize;
+            if ((word)p > GC_WORD_MAX - buf.RegionSize) break; /* overflow */
+
             protect = buf.Protect;
             if (buf.State == MEM_COMMIT
                 && (protect == PAGE_EXECUTE_READWRITE
@@ -1061,11 +1052,10 @@ GC_INNER void GC_register_dynamic_libraries(void)
                     GC_cond_add_roots(base, limit);
                     base = (char *)p;
                 }
-                limit = new_limit;
+                limit = (char *)p + buf.RegionSize;
             }
+            p = (char *)p + buf.RegionSize;
         }
-        if ((word)p > (word)new_limit /* overflow */) break;
-        p = (LPVOID)new_limit;
     }
     GC_cond_add_roots(base, limit);
   }
@@ -1295,11 +1285,11 @@ STATIC const struct dyld_sections_s {
 /* containing private vs. public symbols.  It also constructs   */
 /* sections specifically for zero-sized objects, when the       */
 /* target supports section anchors.                             */
-STATIC const char * const GC_dyld_add_sect_fmts[] = {
-  "__bss%u",
-  "__pu_bss%u",
-  "__zo_bss%u",
-  "__zo_pu_bss%u"
+STATIC const char * const GC_dyld_bss_prefixes[] = {
+  "__bss",
+  "__pu_bss",
+  "__zo_bss",
+  "__zo_pu_bss"
 };
 
 /* Currently, mach-o will allow up to the max of 2^15 alignment */
@@ -1308,134 +1298,116 @@ STATIC const char * const GC_dyld_add_sect_fmts[] = {
 # define L2_MAX_OFILE_ALIGNMENT 15
 #endif
 
+#if CPP_WORDSZ == 64
+# define GC_MACH_HEADER mach_header_64
+#else
+# define GC_MACH_HEADER mach_header
+#endif
+
 STATIC const char *GC_dyld_name_for_hdr(const struct GC_MACH_HEADER *hdr)
 {
-    unsigned long i, c;
-    c = _dyld_image_count();
-    for (i = 0; i < c; i++)
+    unsigned long i, count = _dyld_image_count();
+
+    for (i = 0; i < count; i++) {
       if ((const struct GC_MACH_HEADER *)_dyld_get_image_header(i) == hdr)
         return _dyld_get_image_name(i);
-    return NULL;
+    }
+    /* TODO: probably ABORT in this case? */
+    return NULL; /* not found */
 }
 
-STATIC void GC_dyld_image_add(const struct GC_MACH_HEADER *hdr,
-                              intptr_t slide)
+/* getsectbynamefromheader is deprecated (first time in macOS 13.0),    */
+/* getsectiondata (introduced in macOS 10.7) is used instead if exists. */
+/* Define USE_GETSECTBYNAME to use the deprecated symbol, if needed.    */
+#if !defined(USE_GETSECTBYNAME) \
+    && (MAC_OS_X_VERSION_MIN_REQUIRED < 1070 /*MAC_OS_X_VERSION_10_7*/)
+# define USE_GETSECTBYNAME
+#endif
+
+static void dyld_section_add_del(const struct GC_MACH_HEADER *hdr,
+                                 intptr_t slide GC_ATTR_UNUSED,
+                                 const char *dlpi_name,
+                                 GC_has_static_roots_func callback,
+                                 const char *seg, const char *secnam,
+                                 GC_bool is_add)
 {
-  unsigned long start, end;
-  unsigned i, j;
-  const struct GC_MACH_SECTION *sec;
-  const char *name;
-  GC_has_static_roots_func callback = GC_has_static_roots;
+  unsigned long start, end, sec_size;
+# ifdef USE_GETSECTBYNAME
+#   if CPP_WORDSZ == 64
+      const struct section_64 *sec = getsectbynamefromheader_64(hdr, seg,
+                                                                secnam);
+#   else
+      const struct section *sec = getsectbynamefromheader(hdr, seg, secnam);
+#   endif
   DCL_LOCK_STATE;
 
-  GC_ASSERT(I_DONT_HOLD_LOCK());
-  if (GC_no_dls) return;
-# ifdef DARWIN_DEBUG
-    name = GC_dyld_name_for_hdr(hdr);
+    if (NULL == sec) return;
+    sec_size = sec -> size;
+    start = slide + sec -> addr;
 # else
-    name = callback != 0 ? GC_dyld_name_for_hdr(hdr) : NULL;
+
+    sec_size = 0;
+    start = (unsigned long)getsectiondata(hdr, seg, secnam, &sec_size);
+    if (0 == start) return;
 # endif
-  for (i = 0; i < sizeof(GC_dyld_sections)/sizeof(GC_dyld_sections[0]); i++) {
-    sec = GC_GETSECTBYNAME(hdr, GC_dyld_sections[i].seg,
-                           GC_dyld_sections[i].sect);
-    if (sec == NULL || sec->size < sizeof(word))
-      continue;
-    start = slide + sec->addr;
-    end = start + sec->size;
+  if (sec_size < sizeof(word)) return;
+  end = start + sec_size;
+  if (is_add) {
     LOCK();
     /* The user callback is called holding the lock.    */
-    if (callback == 0 || callback(name, (void*)start, (size_t)sec->size)) {
-#     ifdef DARWIN_DEBUG
-        GC_log_printf(
-              "Adding section __DATA,%s at %p-%p (%lu bytes) from image %s\n",
-               GC_dyld_sections[i].sect, (void*)start, (void*)end,
-               (unsigned long)sec->size, name);
-#     endif
-      GC_add_roots_inner((ptr_t)start, (ptr_t)end, FALSE);
+    if (EXPECT(callback != 0, FALSE)
+        && !callback(dlpi_name, (void *)start, (size_t)sec_size)) {
+      UNLOCK();
+      return; /* skip section */
     }
+    GC_add_roots_inner((ptr_t)start, (ptr_t)end, FALSE);
     UNLOCK();
+  } else {
+    GC_remove_roots((void *)start, (void *)end);
   }
-
-  /* Sections constructed on demand.    */
-  for (j = 0; j < sizeof(GC_dyld_add_sect_fmts) / sizeof(char *); j++) {
-    const char *fmt = GC_dyld_add_sect_fmts[j];
-
-    /* Add our manufactured aligned BSS sections.       */
-    for (i = 0; i <= L2_MAX_OFILE_ALIGNMENT; i++) {
-      char secnam[16];
-
-      (void)snprintf(secnam, sizeof(secnam), fmt, (unsigned)i);
-      secnam[sizeof(secnam) - 1] = '\0';
-      sec = GC_GETSECTBYNAME(hdr, SEG_DATA, secnam);
-      if (sec == NULL || sec->size == 0)
-        continue;
-      start = slide + sec->addr;
-      end = start + sec->size;
-#     ifdef DARWIN_DEBUG
-        GC_log_printf("Adding on-demand section __DATA,%s at"
-                      " %p-%p (%lu bytes) from image %s\n",
-                      secnam, (void*)start, (void*)end,
-                      (unsigned long)sec->size, name);
-#     endif
-      GC_add_roots((char*)start, (char*)end);
-    }
-  }
-
-# if defined(DARWIN_DEBUG) && !defined(NO_DEBUGGING)
-    LOCK();
-    GC_print_static_roots();
-    UNLOCK();
+# ifdef DARWIN_DEBUG
+    GC_log_printf("%s section __DATA,%s at %p-%p (%lu bytes) from image %s\n",
+                  is_add ? "Added" : "Removed",
+                  secnam, (void *)start, (void *)end, sec_size, dlpi_name);
 # endif
 }
 
-STATIC void GC_dyld_image_remove(const struct GC_MACH_HEADER *hdr,
-                                 intptr_t slide)
+static void dyld_image_add_del(const struct GC_MACH_HEADER *hdr,
+                               intptr_t slide,
+                               GC_has_static_roots_func callback,
+                               GC_bool is_add)
 {
-  unsigned long start, end;
   unsigned i, j;
-  const struct GC_MACH_SECTION *sec;
+  const char *dlpi_name;
 # if defined(DARWIN_DEBUG) && !defined(NO_DEBUGGING)
     DCL_LOCK_STATE;
 # endif
 
-  GC_ASSERT(I_DONT_HOLD_LOCK());
+# ifndef DARWIN_DEBUG
+    if (0 == callback) {
+      dlpi_name = NULL;
+    } else
+# endif
+  /* else */ {
+    dlpi_name = GC_dyld_name_for_hdr(hdr);
+  }
   for (i = 0; i < sizeof(GC_dyld_sections)/sizeof(GC_dyld_sections[0]); i++) {
-    sec = GC_GETSECTBYNAME(hdr, GC_dyld_sections[i].seg,
-                           GC_dyld_sections[i].sect);
-    if (sec == NULL || sec->size == 0)
-      continue;
-    start = slide + sec->addr;
-    end = start + sec->size;
-#   ifdef DARWIN_DEBUG
-      GC_log_printf(
-            "Removing section __DATA,%s at %p-%p (%lu bytes) from image %s\n",
-            GC_dyld_sections[i].sect, (void*)start, (void*)end,
-            (unsigned long)sec->size, GC_dyld_name_for_hdr(hdr));
-#   endif
-    GC_remove_roots((char*)start, (char*)end);
+    dyld_section_add_del(hdr, slide, dlpi_name, callback,
+                         GC_dyld_sections[i].seg, GC_dyld_sections[i].sect,
+                         is_add);
   }
 
-  /* Remove our on-demand sections.     */
-  for (j = 0; j < sizeof(GC_dyld_add_sect_fmts) / sizeof(char *); j++) {
-    const char *fmt = GC_dyld_add_sect_fmts[j];
-
+  /* Sections constructed on demand.    */
+  for (j = 0; j < sizeof(GC_dyld_bss_prefixes) / sizeof(char *); j++) {
+    /* Our manufactured aligned BSS sections.   */
     for (i = 0; i <= L2_MAX_OFILE_ALIGNMENT; i++) {
       char secnam[16];
 
-      (void)snprintf(secnam, sizeof(secnam), fmt, (unsigned)i);
+      (void)snprintf(secnam, sizeof(secnam), "%s%u",
+                     GC_dyld_bss_prefixes[j], i);
       secnam[sizeof(secnam) - 1] = '\0';
-      sec = GC_GETSECTBYNAME(hdr, SEG_DATA, secnam);
-      if (sec == NULL || sec->size == 0)
-        continue;
-      start = slide + sec->addr;
-      end = start + sec->size;
-#     ifdef DARWIN_DEBUG
-        GC_log_printf("Removing on-demand section __DATA,%s at"
-                      " %p-%p (%lu bytes) from image %s\n", secnam,
-                      (void*)start, (void*)end, (unsigned long)sec->size,
-                      GC_dyld_name_for_hdr(hdr));
-#     endif
-      GC_remove_roots((char*)start, (char*)end);
+      dyld_section_add_del(hdr, slide, dlpi_name, 0 /* callback */, SEG_DATA,
+                           secnam, is_add);
     }
   }
 
@@ -1444,6 +1416,20 @@ STATIC void GC_dyld_image_remove(const struct GC_MACH_HEADER *hdr,
     GC_print_static_roots();
     UNLOCK();
 # endif
+}
+
+/* This should never be called by a thread holding the lock.    */
+STATIC void GC_dyld_image_add(const struct GC_MACH_HEADER *hdr, intptr_t slide)
+{
+  if (!GC_no_dls)
+    dyld_image_add_del(hdr, slide, GC_has_static_roots, TRUE);
+}
+
+/* This should never be called by a thread holding the lock.    */
+STATIC void GC_dyld_image_remove(const struct GC_MACH_HEADER *hdr,
+                                 intptr_t slide)
+{
+  dyld_image_add_del(hdr, slide, 0 /* callback */, FALSE);
 }
 
 GC_INNER void GC_register_dynamic_libraries(void)
@@ -1455,14 +1441,17 @@ GC_INNER void GC_register_dynamic_libraries(void)
 /* The _dyld_* functions have an internal lock so no _dyld functions
    can be called while the world is stopped without the risk of a deadlock.
    Because of this we MUST setup callbacks BEFORE we ever stop the world.
-   This should be called BEFORE any thread in created and WITHOUT the
+   This should be called BEFORE any thread is created and WITHOUT the
    allocation lock held. */
+
+/* _dyld_bind_fully_image_containing_address is deprecated, so use      */
+/* dlopen(0,RTLD_NOW) instead; define USE_DYLD_TO_BIND to override this */
+/* if needed.                                                           */
 
 GC_INNER void GC_init_dyld(void)
 {
   static GC_bool initialized = FALSE;
 
-  GC_ASSERT(I_DONT_HOLD_LOCK());
   if (initialized) return;
 
 # ifdef DARWIN_DEBUG
@@ -1483,32 +1472,43 @@ GC_INNER void GC_init_dyld(void)
         (void (*)(const struct mach_header*, intptr_t))GC_dyld_image_add);
   _dyld_register_func_for_remove_image(
         (void (*)(const struct mach_header*, intptr_t))GC_dyld_image_remove);
-                        /* Structure mach_header64 has the same fields  */
+                        /* Structure mach_header_64 has the same fields */
                         /* as mach_header except for the reserved one   */
                         /* at the end, so these casts are OK.           */
 
   /* Set this early to avoid reentrancy issues. */
   initialized = TRUE;
 
-# ifdef NO_DYLD_BIND_FULLY_IMAGE
-    /* FIXME: What should we do in this case?   */
-# else
+# ifndef NO_DYLD_BIND_FULLY_IMAGE
     if (GC_no_dls) return; /* skip main data segment registration */
 
     /* When the environment variable is set, the dynamic linker binds   */
     /* all undefined symbols the application needs at launch time.      */
     /* This includes function symbols that are normally bound lazily at */
     /* the time of their first invocation.                              */
-    if (GETENV("DYLD_BIND_AT_LAUNCH") == 0) {
-      /* The environment variable is unset, so we should bind manually. */
-#     ifdef DARWIN_DEBUG
-        GC_log_printf("Forcing full bind of GC code...\n");
-#     endif
-      /* FIXME: '_dyld_bind_fully_image_containing_address' is deprecated. */
+    if (GETENV("DYLD_BIND_AT_LAUNCH") != NULL) return;
+
+    /* The environment variable is unset, so we should bind manually.   */
+#   ifdef DARWIN_DEBUG
+      GC_log_printf("Forcing full bind of GC code...\n");
+#   endif
+#   ifndef USE_DYLD_TO_BIND
+      {
+        void *dl_handle = dlopen(NULL, RTLD_NOW);
+
+        if (!dl_handle)
+          ABORT("dlopen failed (to bind fully image)");
+        /* Note that the handle is never closed.        */
+#       ifdef LINT2
+          GC_noop1((word)dl_handle);
+#       endif
+      }
+#   else
+      /* Note: '_dyld_bind_fully_image_containing_address' is deprecated. */
       if (!_dyld_bind_fully_image_containing_address(
                                                   (unsigned long *)GC_malloc))
         ABORT("_dyld_bind_fully_image_containing_address failed");
-    }
+#   endif
 # endif
 }
 
@@ -1534,6 +1534,16 @@ GC_INNER GC_bool GC_register_main_static_data(void)
       GC_add_roots_inner(data, data + info.data_size, TRUE);
     }
   }
+
+  GC_INNER GC_bool
+  GC_register_main_static_data(void)
+  {
+    /* On Haiku, the main application binary is also a "shared image" and */
+    /* will be reported in an image_info same as for dynamically-loaded   */
+    /* libraries.                                                         */
+    return FALSE;
+  }
+# define HAVE_REGISTER_MAIN_STATIC_DATA
 #endif /* HAIKU */
 
 #elif defined(PCR)
@@ -1568,6 +1578,10 @@ GC_INNER GC_bool GC_register_main_static_data(void)
     }
   }
 #endif /* PCR && !DYNAMIC_LOADING && !MSWIN32 */
+
+#ifdef GC_MUST_RESTORE_REDEFINED_DLOPEN
+# define dlopen GC_dlopen
+#endif
 
 #if !defined(HAVE_REGISTER_MAIN_STATIC_DATA) && defined(DYNAMIC_LOADING)
   /* Do we need to separately register the main static data segment? */

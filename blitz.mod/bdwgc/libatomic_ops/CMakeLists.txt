@@ -20,16 +20,16 @@
 # SOFTWARE.
 ##
 
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.10)
 
-set(PACKAGE_VERSION 7.7.0)
+set(PACKAGE_VERSION 7.10.0)
 # Version must match that in AC_INIT of configure.ac and that in README.
 # Version must conform to: [0-9]+[.][0-9]+[.][0-9]+
 
 # Info (current:revision:age) for the Libtool versioning system.
 # These values should match those in src/Makefile.am.
-set(LIBATOMIC_OPS_VER_INFO      2:1:1)
-set(LIBATOMIC_OPS_GPL_VER_INFO  2:3:1)
+set(LIBATOMIC_OPS_VER_INFO      4:0:3)
+set(LIBATOMIC_OPS_GPL_VER_INFO  4:0:3)
 
 project(libatomic_ops C)
 
@@ -49,8 +49,8 @@ if (NOT (${CMAKE_VERSION} VERSION_LESS "3.18.0"))
 endif()
 
 # Customize the build by passing "-D<option_name>=ON|OFF" in the command line.
-option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
-option(build_tests "Build tests" OFF)
+option(AO_BUILD_SHARED_LIBS "Build shared libraries" OFF)
+# option(BUILD_TESTING "Build tests" ON) - the standard one
 option(enable_assertions "Enable assertion checking" OFF)
 option(enable_werror "Treat warnings as errors" OFF)
 option(enable_atomic_intrinsics "Use GCC atomic intrinsics" ON)
@@ -68,7 +68,7 @@ if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 # Convert VER_INFO values to [SO]VERSION ones.
-if (BUILD_SHARED_LIBS)
+if (AO_BUILD_SHARED_LIBS)
   # atomic_ops:
   string(REGEX REPLACE "(.+):.+:.+"  "\\1" ao_cur ${LIBATOMIC_OPS_VER_INFO})
   string(REGEX REPLACE ".+:(.+):.+"  "\\1" ao_rev ${LIBATOMIC_OPS_VER_INFO})
@@ -86,7 +86,7 @@ if (BUILD_SHARED_LIBS)
   math(EXPR AO_GPL_SOVERSION "${ao_gpl_cur} - ${ao_gpl_age}")
   set(AO_GPL_VERSION_PROP "${AO_GPL_SOVERSION}.${ao_gpl_age}.${ao_gpl_rev}")
   message(STATUS "AO_GPL_VERSION_PROP = ${AO_GPL_VERSION_PROP}")
-endif(BUILD_SHARED_LIBS)
+endif(AO_BUILD_SHARED_LIBS)
 
 # Output all warnings.
 if (MSVC)
@@ -124,7 +124,7 @@ if (NOT enable_atomic_intrinsics)
 endif()
 
 # AO API symbols export control.
-if (BUILD_SHARED_LIBS)
+if (AO_BUILD_SHARED_LIBS)
   add_compile_options(-DAO_DLL)
 endif()
 
@@ -146,10 +146,15 @@ set(SRC src/atomic_ops.c)
 
 if (CMAKE_C_COMPILER_ID STREQUAL "SunPro")
   # SunCC compiler on SunOS (Solaris).
+  enable_language(ASM)
   set(SRC ${SRC} src/atomic_ops_sysdeps.S)
 endif()
 
-add_library(atomic_ops ${SRC})
+if (AO_BUILD_SHARED_LIBS)
+  add_library(atomic_ops SHARED ${SRC})
+else()
+  add_library(atomic_ops STATIC ${SRC})
+endif()
 target_link_libraries(atomic_ops PRIVATE ${THREADDLLIBS_LIST})
 target_include_directories(atomic_ops
                 PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>"
@@ -157,7 +162,11 @@ target_include_directories(atomic_ops
 
 if (enable_gpl)
   set(AO_GPL_SRC src/atomic_ops_malloc.c src/atomic_ops_stack.c)
-  add_library(atomic_ops_gpl ${AO_GPL_SRC})
+  if (AO_BUILD_SHARED_LIBS)
+    add_library(atomic_ops_gpl SHARED ${AO_GPL_SRC})
+  else()
+    add_library(atomic_ops_gpl STATIC ${AO_GPL_SRC})
+  endif()
   check_function_exists(mmap HAVE_MMAP)
   if (HAVE_MMAP)
     target_compile_definitions(atomic_ops_gpl PRIVATE HAVE_MMAP)
@@ -166,7 +175,7 @@ if (enable_gpl)
   target_include_directories(atomic_ops_gpl
                 PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>"
                 INTERFACE "$<INSTALL_INTERFACE:include>")
-  if (BUILD_SHARED_LIBS)
+  if (AO_BUILD_SHARED_LIBS)
     set_property(TARGET atomic_ops_gpl PROPERTY VERSION ${AO_GPL_VERSION_PROP})
     set_property(TARGET atomic_ops_gpl PROPERTY SOVERSION ${AO_GPL_SOVERSION})
   endif()
@@ -177,31 +186,33 @@ if (enable_gpl)
           INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 endif(enable_gpl)
 
-if (BUILD_SHARED_LIBS)
-  if (${CMAKE_VERSION} VERSION_LESS "3.18.0")
-    set(WL_NO_UNDEFINED_OPT "-Wl,--no-undefined")
-    check_c_compiler_flag(${WL_NO_UNDEFINED_OPT} HAVE_FLAG_WL_NO_UNDEFINED)
-  else()
-    set(WL_NO_UNDEFINED_OPT "LINKER:--no-undefined")
-    check_linker_flag(C "${WL_NO_UNDEFINED_OPT}" HAVE_FLAG_WL_NO_UNDEFINED)
-  endif()
-  if (HAVE_FLAG_WL_NO_UNDEFINED)
-    # Declare that the libraries do not refer to external symbols.
-    if (${CMAKE_VERSION} VERSION_LESS "3.13.0")
-      target_link_libraries(atomic_ops PRIVATE ${WL_NO_UNDEFINED_OPT})
-      if (enable_gpl)
-        target_link_libraries(atomic_ops_gpl PRIVATE ${WL_NO_UNDEFINED_OPT})
-      endif(enable_gpl)
+if (AO_BUILD_SHARED_LIBS)
+  if (NOT (${CMAKE_SYSTEM_NAME} MATCHES "BSD"))
+    if (${CMAKE_VERSION} VERSION_LESS "3.18.0")
+      set(WL_NO_UNDEFINED_OPT "-Wl,--no-undefined")
+      check_c_compiler_flag(${WL_NO_UNDEFINED_OPT} HAVE_FLAG_WL_NO_UNDEFINED)
     else()
-      target_link_options(atomic_ops PRIVATE ${WL_NO_UNDEFINED_OPT})
-      if (enable_gpl)
-        target_link_options(atomic_ops_gpl PRIVATE ${WL_NO_UNDEFINED_OPT})
-      endif(enable_gpl)
+      set(WL_NO_UNDEFINED_OPT "LINKER:--no-undefined")
+      check_linker_flag(C "${WL_NO_UNDEFINED_OPT}" HAVE_FLAG_WL_NO_UNDEFINED)
     endif()
-  endif(HAVE_FLAG_WL_NO_UNDEFINED)
+    if (HAVE_FLAG_WL_NO_UNDEFINED)
+      # Declare that the libraries do not refer to external symbols.
+      if (${CMAKE_VERSION} VERSION_LESS "3.13.0")
+        target_link_libraries(atomic_ops PRIVATE ${WL_NO_UNDEFINED_OPT})
+        if (enable_gpl)
+          target_link_libraries(atomic_ops_gpl PRIVATE ${WL_NO_UNDEFINED_OPT})
+        endif(enable_gpl)
+      else()
+        target_link_options(atomic_ops PRIVATE ${WL_NO_UNDEFINED_OPT})
+        if (enable_gpl)
+          target_link_options(atomic_ops_gpl PRIVATE ${WL_NO_UNDEFINED_OPT})
+        endif(enable_gpl)
+      endif()
+    endif(HAVE_FLAG_WL_NO_UNDEFINED)
+  endif()
   set_property(TARGET atomic_ops PROPERTY VERSION ${AO_VERSION_PROP})
   set_property(TARGET atomic_ops PROPERTY SOVERSION ${AO_SOVERSION})
-endif(BUILD_SHARED_LIBS)
+endif(AO_BUILD_SHARED_LIBS)
 
 install(TARGETS atomic_ops EXPORT Atomic_opsTargets
         LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
@@ -312,7 +323,7 @@ if (install_headers)
   # TODO: handle atomic_ops-uninstalled.pc.in
 endif(install_headers)
 
-if (build_tests)
+if (BUILD_TESTING)
   add_executable(test_atomic tests/test_atomic.c)
   target_link_libraries(test_atomic PRIVATE atomic_ops ${THREADDLLIBS_LIST})
   add_test(NAME test_atomic COMMAND test_atomic)
@@ -343,11 +354,11 @@ if (build_tests)
     target_link_libraries(test_malloc
                 PRIVATE atomic_ops atomic_ops_gpl ${THREADDLLIBS_LIST})
     add_test(NAME test_malloc COMMAND test_malloc)
-  endif()
-endif(build_tests)
+  endif(enable_gpl)
+endif()
 
 if (enable_docs)
-  install(FILES AUTHORS LICENSE README.md
+  install(FILES AUTHORS ChangeLog LICENSE README.md
                 README_details.txt README_win32.txt
           DESTINATION "${CMAKE_INSTALL_DOCDIR}")
   if (enable_gpl)

@@ -2,35 +2,34 @@
  * Copyright 1988, 1989 Hans-J. Boehm, Alan J. Demers
  * Copyright (c) 1991-1994 by Xerox Corporation.  All rights reserved.
  * Copyright (c) 1999-2004 Hewlett-Packard Development Company, L.P.
- * Copyright (c) 2008-2022 Ivan Maidanski
+ * Copyright (c) 2008-2025 Ivan Maidanski
  *
  * THIS MATERIAL IS PROVIDED AS IS, WITH ABSOLUTELY NO WARRANTY EXPRESSED
  * OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
  *
  * Permission is hereby granted to use or copy this program
- * for any purpose, provided the above notices are retained on all copies.
+ * for any purpose,  provided the above notices are retained on all copies.
  * Permission to modify the code and to distribute modified code is granted,
  * provided the above notices are retained, and a notice that the code was
  * modified is included with the above copyright notice.
  */
 
 #include "private/gc_priv.h"
+#include "gc_inline.h" /* for GC_malloc_kind */
 
+#include <stdio.h>
 #include <string.h>
 
-/* Allocate reclaim list for the kind.  Returns TRUE on success.        */
+/* Allocate reclaim list for kind:      */
+/* Return TRUE on success               */
 STATIC GC_bool GC_alloc_reclaim_list(struct obj_kind *kind)
 {
-    struct hblk ** result;
-
-    GC_ASSERT(I_HOLD_LOCK());
-    result = (struct hblk **)GC_scratch_alloc(
-                                (MAXOBJGRANULES+1) * sizeof(struct hblk *));
-    if (EXPECT(NULL == result, FALSE)) return FALSE;
-
+    struct hblk ** result = (struct hblk **)
+                GC_scratch_alloc((MAXOBJGRANULES+1) * sizeof(struct hblk *));
+    if (result == 0) return(FALSE);
     BZERO(result, (MAXOBJGRANULES+1)*sizeof(struct hblk *));
     kind -> ok_reclaim_list = result;
-    return TRUE;
+    return(TRUE);
 }
 
 /* Allocate a large block of size lb bytes.  The block is not cleared.  */
@@ -138,14 +137,14 @@ STATIC void GC_extend_size_map(size_t i)
   /* For these larger sizes, we use an even number of granules.         */
   /* This makes it easier to, e.g., construct a 16-byte-aligned         */
   /* allocator even if GRANULE_BYTES is 8.                              */
-  granule_sz = (granule_sz + 1) & ~1;
+  granule_sz = (granule_sz + 1) & ~(size_t)1;
   if (granule_sz > MAXOBJGRANULES)
     granule_sz = MAXOBJGRANULES;
 
   /* If we can fit the same number of larger objects in a block, do so. */
   number_of_objs = HBLK_GRANULES / granule_sz;
   GC_ASSERT(number_of_objs != 0);
-  granule_sz = (HBLK_GRANULES / number_of_objs) & ~1;
+  granule_sz = (HBLK_GRANULES / number_of_objs) & ~(size_t)1;
 
   byte_sz = GRANULES_TO_BYTES(granule_sz) - EXTRA_BYTES;
                         /* We may need one extra byte; do not always    */
@@ -156,7 +155,7 @@ STATIC void GC_extend_size_map(size_t i)
 }
 
 /* Allocate lb bytes for an object of kind k.           */
-/* Should not be used to directly to allocate objects   */
+/* Should not be used to directly allocate objects      */
 /* that require special handling on allocation.         */
 GC_INNER void * GC_generic_malloc_inner(size_t lb, int k)
 {
@@ -201,9 +200,11 @@ GC_INNER void * GC_generic_malloc_inner(size_t lb, int k)
         obj_link(op) = 0;
         GC_bytes_allocd += GRANULES_TO_BYTES((word)lg);
     } else {
-        op = (ptr_t)GC_alloc_large_and_clear(ADD_SLOP(lb), k, 0);
+        size_t lb_adjusted = ADD_SLOP(lb);
+
+        op = (ptr_t)GC_alloc_large_and_clear(lb_adjusted, k, 0 /* flags */);
         if (op != NULL)
-            GC_bytes_allocd += lb;
+            GC_bytes_allocd += lb_adjusted;
     }
 
     return op;
@@ -212,10 +213,10 @@ GC_INNER void * GC_generic_malloc_inner(size_t lb, int k)
 #if defined(DBG_HDRS_ALL) || defined(GC_GCJ_SUPPORT) \
     || !defined(GC_NO_FINALIZATION)
   /* Allocate a composite object of size n bytes.  The caller           */
-  /* guarantees that pointers past the first page are not relevant.     */
+  /* guarantees that pointers past the first hblk are not relevant.     */
   GC_INNER void * GC_generic_malloc_inner_ignore_off_page(size_t lb, int k)
   {
-    word lb_adjusted;
+    size_t lb_adjusted;
     void * op;
 
     GC_ASSERT(I_HOLD_LOCK());
@@ -224,9 +225,8 @@ GC_INNER void * GC_generic_malloc_inner(size_t lb, int k)
     GC_ASSERT(k < MAXOBJKINDS);
     lb_adjusted = ADD_SLOP(lb);
     op = GC_alloc_large_and_clear(lb_adjusted, k, IGNORE_OFF_PAGE);
-    if (EXPECT(op != NULL, TRUE)) {
+    if (op != NULL)
         GC_bytes_allocd += lb_adjusted;
-    }
     return op;
   }
 #endif
@@ -268,7 +268,11 @@ GC_API GC_ATTR_MALLOC void * GC_CALL GC_generic_malloc(size_t lb, int k)
         LOCK();
         result = (ptr_t)GC_alloc_large(lb_rounded, k, 0);
         if (0 != result) {
-          if (GC_debugging_started) {
+          if (GC_debugging_started
+#             ifndef THREADS
+                || init
+#             endif
+             ) {
             BZERO(result, n_blocks * HBLKSIZE);
           } else {
 #           ifdef THREADS
@@ -283,18 +287,34 @@ GC_API GC_ATTR_MALLOC void * GC_CALL GC_generic_malloc(size_t lb, int k)
           GC_bytes_allocd += lb_rounded;
         }
         UNLOCK();
-        if (init && !GC_debugging_started && 0 != result) {
-            BZERO(result, n_blocks * HBLKSIZE);
-        }
+#       ifdef THREADS
+          if (init && !GC_debugging_started && result != NULL) {
+            /* Clear the rest (i.e. excluding the initial 2 words). */
+            BZERO((word *)result + 2,
+                  n_blocks * HBLKSIZE - 2 * sizeof(word));
+          }
+#       endif
     }
-    if (EXPECT(NULL == result, FALSE)) return (*GC_get_oom_fn())(lb);
-    return result;
+    if (0 == result) {
+        return((*GC_get_oom_fn())(lb));
+    } else {
+        return(result);
+    }
 }
+
+#if defined(LINT2) || MAX_EXTRA_BYTES == 0
+# define SMALL_OBJ_LINT(lb) SMALL_OBJ(lb)
+#else
+  /* Workaround "array subscript 4096 is above array bounds" gcc warning. */
+# define SMALL_OBJ_LINT(lb) \
+            (EXPECT((lb) <= MAXOBJBYTES - MAX_EXTRA_BYTES, TRUE) \
+             || (lb) <= MAXOBJBYTES - (unsigned char)GC_all_interior_pointers)
+#endif
 
 GC_API GC_ATTR_MALLOC void * GC_CALL GC_malloc_kind_global(size_t lb, int k)
 {
     GC_ASSERT(k < MAXOBJKINDS);
-    if (SMALL_OBJ(lb)) {
+    if (SMALL_OBJ_LINT(lb)) {
         void *op;
         void **opp;
         size_t lg;
@@ -387,7 +407,7 @@ GC_API GC_ATTR_MALLOC void * GC_CALL GC_generic_malloc_uncollectable(
       if (op /* != NULL */) { /* CPPCHECK */
         hdr * hhdr = HDR(op);
 
-        GC_ASSERT(HBLKDISPL(op) == 0); /* large block */
+        GC_ASSERT(((word)op & (HBLKSIZE - 1)) == 0); /* large block */
         /* We don't need the lock here, since we have an undisguised    */
         /* pointer.  We do need to hold the lock while we adjust        */
         /* mark bits.                                                   */
@@ -425,7 +445,7 @@ GC_API GC_ATTR_MALLOC void * GC_CALL GC_malloc_uncollectable(size_t lb)
 #if defined(REDIRECT_MALLOC) && !defined(REDIRECT_MALLOC_IN_HEADER)
 
 # ifndef MSWINCE
-#   include <errno.h>
+#  include <errno.h>
 # endif
 
   /* Avoid unnecessary nested procedure calls here, by #defining some   */
@@ -456,63 +476,72 @@ GC_API GC_ATTR_MALLOC void * GC_CALL GC_malloc_uncollectable(size_t lb)
   }
 
 # if defined(GC_LINUX_THREADS)
-#   ifdef HAVE_LIBPTHREAD_SO
-      STATIC ptr_t GC_libpthread_start = NULL;
-      STATIC ptr_t GC_libpthread_end = NULL;
-#   endif
-    STATIC ptr_t GC_libld_start = NULL;
-    STATIC ptr_t GC_libld_end = NULL;
+    STATIC ptr_t GC_libpthread_start = 0;
+    STATIC ptr_t GC_libpthread_end = 0;
+    STATIC ptr_t GC_libld_start = 0;
+    STATIC ptr_t GC_libld_end = 0;
+    static GC_bool lib_bounds_set = FALSE;
 
-    STATIC void GC_init_lib_bounds(void)
+    GC_INNER void GC_init_lib_bounds(void)
     {
       IF_CANCEL(int cancel_state;)
+      DCL_LOCK_STATE;
+
+      /* This test does not need to ensure memory visibility, since     */
+      /* the bounds will be set when/if we create another thread.       */
+      if (EXPECT(lib_bounds_set, TRUE)) return;
 
       DISABLE_CANCEL(cancel_state);
       GC_init(); /* if not called yet */
-#     ifdef HAVE_LIBPTHREAD_SO
-        if (!GC_text_mapping("libpthread-",
-                             &GC_libpthread_start, &GC_libpthread_end)) {
-          WARN("Failed to find libpthread.so text mapping: Expect crash\n", 0);
-          /* This might still work with some versions of libpthread,    */
-          /* so we do not abort.                                        */
-        }
+#     if defined(GC_ASSERTIONS) && defined(GC_ALWAYS_MULTITHREADED)
+        LOCK(); /* just to set GC_lock_holder */
 #     endif
+      if (!GC_text_mapping("libpthread-",
+                           &GC_libpthread_start, &GC_libpthread_end)) {
+        /* Some libc implementations like bionic, musl and glibc 2.34   */
+        /* do not have libpthread.so because the pthreads-related code  */
+        /* is located in libc.so, thus potential calloc calls from such */
+        /* code are forwarded to real (libc) calloc without any special */
+        /* handling on the libgc side.  Checking glibc version at       */
+        /* compile time to turn off the warning seems to be fine.       */
+        /* TODO: Remove GC_text_mapping() call for this case.           */
+#       if defined(__GLIBC__) \
+           && (__GLIBC__ < 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ < 34))
+          WARN("Failed to find libpthread.so text mapping: Expect crash\n", 0);
+          /* This might still work with some versions of libpthread,      */
+          /* so we do not abort.                                          */
+#       endif
+      }
       if (!GC_text_mapping("ld-", &GC_libld_start, &GC_libld_end)) {
           WARN("Failed to find ld.so text mapping: Expect crash\n", 0);
       }
+#     if defined(GC_ASSERTIONS) && defined(GC_ALWAYS_MULTITHREADED)
+        UNLOCK();
+#     endif
       RESTORE_CANCEL(cancel_state);
+      lib_bounds_set = TRUE;
     }
 # endif /* GC_LINUX_THREADS */
 
   void * calloc(size_t n, size_t lb)
   {
-    if (EXPECT((lb | n) > GC_SQRT_SIZE_MAX, FALSE) /* fast initial test */
+    if ((lb | n) > GC_SQRT_SIZE_MAX /* fast initial test */
         && lb && n > GC_SIZE_MAX / lb)
       return (*GC_get_oom_fn())(GC_SIZE_MAX); /* n*lb overflow */
 #   if defined(GC_LINUX_THREADS)
-      /* The linker may allocate some memory that is only pointed to by */
+      /* libpthread allocated some memory that is only pointed to by    */
       /* mmapped thread stacks.  Make sure it is not collectible.       */
       {
-        static GC_bool lib_bounds_set = FALSE;
         ptr_t caller = (ptr_t)__builtin_return_address(0);
 
-        /* This test does not need to ensure memory visibility, since   */
-        /* the bounds will be set when/if we create another thread.     */
-        if (!EXPECT(lib_bounds_set, TRUE)) {
-          GC_init_lib_bounds();
-          lib_bounds_set = TRUE;
-        }
-        if (((word)caller >= (word)GC_libld_start
-             && (word)caller < (word)GC_libld_end)
-#           ifdef HAVE_LIBPTHREAD_SO
-              || ((word)caller >= (word)GC_libpthread_start
-                  && (word)caller < (word)GC_libpthread_end)
-                    /* The two ranges are actually usually adjacent,    */
-                    /* so there may be a way to speed this up.          */
-#           endif
-           ) {
+        GC_init_lib_bounds();
+        if (((word)caller >= (word)GC_libpthread_start
+             && (word)caller < (word)GC_libpthread_end)
+            || ((word)caller >= (word)GC_libld_start
+                && (word)caller < (word)GC_libld_end))
           return GC_generic_malloc_uncollectable(n * lb, UNCOLLECTABLE);
-        }
+        /* The two ranges are actually usually adjacent, so there may   */
+        /* be a way to speed this up.                                   */
       }
 #   endif
     return (void *)REDIRECT_MALLOC_F(n * lb);
@@ -523,10 +552,11 @@ GC_API GC_ATTR_MALLOC void * GC_CALL GC_malloc_uncollectable(size_t lb)
     {
       size_t lb = strlen(s) + 1;
       char *result = (char *)REDIRECT_MALLOC_F(lb);
-
-      if (EXPECT(NULL == result, FALSE)) {
-        errno = ENOMEM;
-        return NULL;
+      if (result == 0) {
+#       ifndef MSWINCE
+          errno = ENOMEM;
+#       endif
+        return 0;
       }
       BCOPY(s, result, lb);
       return result;
@@ -542,11 +572,13 @@ GC_API GC_ATTR_MALLOC void * GC_CALL GC_malloc_uncollectable(size_t lb)
     {
       char *copy;
       size_t len = strlen(str);
-      if (EXPECT(len > size, FALSE))
+      if (len > size)
         len = size;
       copy = (char *)REDIRECT_MALLOC_F(len + 1);
-      if (EXPECT(NULL == copy, FALSE)) {
-        errno = ENOMEM;
+      if (copy == NULL) {
+#       ifndef MSWINCE
+          errno = ENOMEM;
+#       endif
         return NULL;
       }
       if (EXPECT(len > 0, TRUE))
@@ -607,7 +639,7 @@ GC_API void GC_CALL GC_free(void * p)
         LOCK();
         GC_bytes_freed += sz;
         if (IS_UNCOLLECTABLE(knd)) GC_non_gc_bytes -= sz;
-                /* Its unnecessary to clear the mark bit.  If the       */
+                /* It's unnecessary to clear the mark bit.  If the      */
                 /* object is reallocated, it doesn't matter.  O.w. the  */
                 /* collector will do it, since it's on a free list.     */
         if (ok -> ok_init && EXPECT(sz > sizeof(word), TRUE)) {
@@ -644,7 +676,6 @@ GC_API void GC_CALL GC_free(void * p)
     int knd;
     struct obj_kind * ok;
 
-    GC_ASSERT(I_HOLD_LOCK());
     h = HBLKPTR(p);
     hhdr = HDR(h);
     knd = hhdr -> hb_obj_kind;
@@ -686,27 +717,24 @@ GC_API void GC_CALL GC_free(void * p)
 #   define REDIRECT_FREE_F REDIRECT_FREE
 # endif
 
-  void free(void * p)
+  void free(void * p GC_ATTR_UNUSED)
   {
-#   ifndef IGNORE_FREE
-#     if defined(GC_LINUX_THREADS) && !defined(USE_PROC_FOR_LIBRARIES)
+#   if defined(GC_LINUX_THREADS) && !defined(USE_PROC_FOR_LIBRARIES)
         /* Don't bother with initialization checks.  If nothing         */
         /* has been initialized, the check fails, and that's safe,      */
         /* since we have not allocated uncollectible objects neither.   */
         ptr_t caller = (ptr_t)__builtin_return_address(0);
         /* This test does not need to ensure memory visibility, since   */
         /* the bounds will be set when/if we create another thread.     */
-        if (((word)caller >= (word)GC_libld_start
-             && (word)caller < (word)GC_libld_end)
-#           ifdef HAVE_LIBPTHREAD_SO
-              || ((word)caller >= (word)GC_libpthread_start
-                  && (word)caller < (word)GC_libpthread_end)
-#           endif
-           ) {
+        if (((word)caller >= (word)GC_libpthread_start
+             && (word)caller < (word)GC_libpthread_end)
+            || ((word)caller >= (word)GC_libld_start
+                && (word)caller < (word)GC_libld_end)) {
           GC_free(p);
           return;
         }
-#     endif
+#   endif
+#   ifndef IGNORE_FREE
       REDIRECT_FREE_F(p);
 #   endif
   }

@@ -10,7 +10,7 @@ old code, not for new development.
 New code should use the interface discussed below.
 
 Code must be linked against the GC library. On most UNIX platforms, depending
-on how the collector is built, this will be `libgc.a` or `libgc.so`.
+on how the collector is built, this will be `gc.a` or `libgc.{a,so}`.
 
 The following describes the standard C interface to the garbage collector.
 It is not a complete definition of the interface. It describes only the most
@@ -56,8 +56,8 @@ object for pointers to garbage-collectible memory, even if the block itself
 does not appear to be reachable. (Objects allocated in this way are
 effectively treated as roots by the collector.)
 
-`void * GC_REALLOC(void * _old_object_, size_t _new_bytes_)` - Allocates
-a new object of the indicated size and copy the old object's content into the
+`void * GC_REALLOC(void * _old_object_, size_t _new_bytes_)` - Allocates a new
+object of the indicated size and copies the old object's contents into the
 new object. The old object is reused in place if convenient. If the original
 object was allocated with `GC_MALLOC_ATOMIC`, the new object is subject to the
 same constraints. If it was allocated as an uncollectible object, then the new
@@ -70,8 +70,8 @@ Typically not useful for small collectible objects.
 `void * GC_MALLOC_ATOMIC_IGNORE_OFF_PAGE(size_t _bytes_)` - Analogous
 to `GC_MALLOC` and `GC_MALLOC_ATOMIC`, respectively, except that the client
 guarantees that as long as the resulting object is of use, a pointer
-is maintained to someplace inside the first 512 bytes of the object. This
-pointer should be declared volatile to avoid interference from compiler
+is maintained to someplace inside the first heap block (hblk) of the object.
+This pointer should be declared volatile to avoid interference from compiler
 optimizations. (Other nonvolatile pointers to the object may exist as well.)
 This is the preferred way to allocate objects that are likely to be
 more than 100 KB in size. It greatly reduces the risk that such objects will
@@ -111,8 +111,8 @@ interface. See also [here](finalization.md) for a more detailed discussion
 of the design. Note that an object may become inaccessible before client code
 is done operating on objects referenced by its fields. Suitable
 synchronization is usually required. See
-[here](http://portal.acm.org/citation.cfm?doid=604131.604153) or
-[here](http://www.hpl.hp.com/techreports/2002/HPL-2002-335.html) for details.
+["Destructors, Finalizers, and Synchronization"](https://dl.acm.org/doi/10.1145/604131.604153)
+for details.
 
 If you are concerned with multiprocessor performance and scalability, you
 should consider enabling and using thread local allocation.
@@ -213,4 +213,4 @@ an underlying garbage-collected large block allocator, since the collector has
 to view all objects accessible from the user's free list as reachable. This
 is likely to cause problems if `GC_MALLOC` is used with something like the
 original HP version of STL. This approach works well with the SGI versions
-of the STL only if the STL "malloc_alloc" allocator is used.
+of the STL only if the `malloc_alloc` allocator is used.
